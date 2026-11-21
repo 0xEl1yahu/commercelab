@@ -23,6 +23,8 @@ from typing import Literal, TypedDict
 import psycopg
 from psycopg.rows import dict_row
 
+from commercelab.domain import pricing
+
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
@@ -192,7 +194,20 @@ def list_categories(conn: psycopg.Connection) -> list[Category]:
         return cur.fetchall()
 
 
-# --- products (stream b-catalogue implements these) -----------------------------------
+# --- products ---------------------------------------------------------------------
+
+# Every sort ends in the id, and names compare as lower(name COLLATE "C"), so the
+# order never depends on the database's locale and paging never repeats or skips.
+_NAME_ORDER = 'lower(q.name COLLATE "C"), q.id'
+_MAX_OFFSET = 2**63 - 1  # PostgreSQL bigint
+_ORDER_BY = {
+    # In stock first, newest first, then the name order.
+    "featured": f"(q.available = 0), q.created_at DESC, {_NAME_ORDER}",
+    "name": _NAME_ORDER,
+    "price_asc": f"q.price, {_NAME_ORDER}",
+    "price_desc": f"q.price DESC, {_NAME_ORDER}",
+}
+
 
 def list_products(
     conn: psycopg.Connection,
@@ -210,30 +225,150 @@ def list_products(
 
     Raises ValueError for bad paging, or when min_price > max_price.
     """
-    raise NotImplementedError("b-catalogue")
+    if not 1 <= limit <= MAX_PAGE_SIZE:
+        raise ValueError(f"limit must be between 1 and {MAX_PAGE_SIZE}, not {limit}")
+    if offset < 0:
+        raise ValueError(f"offset must not be negative, not {offset}")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise ValueError("min_price must not exceed max_price")
+    if sort not in _ORDER_BY:
+        raise ValueError(f"unknown sort {sort!r}: expected one of {', '.join(_ORDER_BY)}")
+
+    # Values always travel as parameters; only the fixed fragments below are SQL text.
+    query = _PRODUCT_QUERY
+    params: list = []
+    if category is not None:
+        query += " AND p.category = %s"
+        params.append(category)
+    if brands:
+        query += " AND p.brand = ANY(%s)"
+        params.append(list(brands))
+    if min_price is not None:
+        query += " AND p.price >= %s"
+        params.append(min_price)
+    if max_price is not None:
+        query += " AND p.price <= %s"
+        params.append(max_price)
+    if in_stock:
+        query += " AND coalesce(a.available, 0) > 0"
+
+    with conn.cursor(row_factory=dict_row) as cur:
+        if offset > _MAX_OFFSET:
+            # Beyond what OFFSET accepts (a bigint): certainly past the end.
+            cur.execute(f"SELECT count(*) AS total FROM ({query}) q", params)
+            return {"items": [], "total": cur.fetchone()["total"]}
+        cur.execute(
+            f"SELECT q.*, count(*) OVER () AS total FROM ({query}) q "
+            f"ORDER BY {_ORDER_BY[sort]} LIMIT %s OFFSET %s",
+            [*params, limit, offset],
+        )
+        rows = cur.fetchall()
+        if rows:
+            total = rows[0]["total"]
+        elif offset == 0:
+            total = 0
+        else:
+            # An offset past the end returns no rows to carry the window count.
+            cur.execute(f"SELECT count(*) AS total FROM ({query}) q", params)
+            total = cur.fetchone()["total"]
+    return {"items": [_card(row) for row in rows], "total": total}
 
 
 def listing_facets(conn: psycopg.Connection, *, category: str | None) -> Facets:
     """Brands (alphabetical) and the price range of the active products in a category."""
-    raise NotImplementedError("b-catalogue")
+    query = _PRODUCT_QUERY
+    params: list = []
+    if category is not None:
+        query += " AND p.category = %s"
+        params.append(category)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT coalesce(array_agg(DISTINCT q.brand), '{}') AS brands, "
+            f"min(q.price) AS min_price, max(q.price) AS max_price FROM ({query}) q",
+            params,
+        )
+        row = cur.fetchone()
+    # Sorted here, not in SQL, so the order never depends on the database's locale:
+    # case-insensitive, with the exact spelling as the tie-break.
+    return {
+        "brands": sorted(row["brands"], key=lambda brand: (brand.lower(), brand)),
+        "min_price": row["min_price"],
+        "max_price": row["max_price"],
+    }
 
 
 def get_product(conn: psycopg.Connection, product_id: int) -> ProductCard:
     """One active product by id. Inactive and missing products raise ProductNotFound."""
-    raise NotImplementedError("b-catalogue")
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(_PRODUCT_QUERY + " AND p.id = %s", [product_id])
+        row = cur.fetchone()
+    if row is None:
+        raise ProductNotFound(product_id)
+    return _card(row)
 
 
 def get_product_by_slug(conn: psycopg.Connection, slug: str) -> ProductDetail:
     """One active product by slug, with everything its page shows. Raises ProductNotFound."""
-    raise NotImplementedError("b-catalogue")
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT q.*, p.tagline, p.description, p.specs, c.title AS category_title "
+            f"FROM ({_PRODUCT_QUERY} AND p.slug = %s) q "
+            "JOIN products p ON p.id = q.id "
+            "JOIN categories c ON c.slug = q.category",
+            [slug],
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ProductNotFound(slug)
+        cur.execute(
+            "SELECT image_sha256 AS key, alt FROM product_images "
+            "WHERE product_id = %s ORDER BY position",
+            [row["id"]],
+        )
+        images: list[Image] = cur.fetchall()
+    card = _card(row)
+    return {
+        **card,
+        "category_title": row["category_title"],
+        "tagline": row["tagline"],
+        "description": row["description"],
+        "specs": [{"label": spec["label"], "value": spec["value"]} for spec in row["specs"]],
+        "images": images,
+        "vat_included": pricing.vat_included(card["price"]),
+    }
 
+
+# --- collections ----------------------------------------------------------------------
 
 def list_collections(conn: psycopg.Connection) -> list[Collection]:
     """Every collection, by position."""
-    raise NotImplementedError("b-catalogue")
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT slug, title, description FROM collections "
+            'ORDER BY position, slug COLLATE "C"'
+        )
+        return cur.fetchall()
 
 
 def get_collection(conn: psycopg.Connection, slug: str) -> CollectionDetail:
     """One collection with its active products in collection order. Raises CollectionNotFound."""
-    raise NotImplementedError("b-catalogue")
-
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT id, slug, title, description FROM collections WHERE slug = %s", [slug]
+        )
+        collection = cur.fetchone()
+        if collection is None:
+            raise CollectionNotFound(slug)
+        cur.execute(
+            f"SELECT q.* FROM ({_PRODUCT_QUERY}) q "
+            "JOIN collection_products cp ON cp.product_id = q.id "
+            "WHERE cp.collection_id = %s ORDER BY cp.position, q.id",
+            [collection["id"]],
+        )
+        rows = cur.fetchall()
+    return {
+        "slug": collection["slug"],
+        "title": collection["title"],
+        "description": collection["description"],
+        "products": [_card(row) for row in rows],
+    }
