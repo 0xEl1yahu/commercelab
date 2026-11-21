@@ -371,7 +371,7 @@ Everything the parallel streams import. The files are added to `docs/superpowers
     | 422 with `detail` as a list | `invalid`, with fields mapped from each `loc`'s last two parts to `msg`, and the message "Please check the highlighted fields." |
     | anything else, including 502 and status 0 (network) | `retryable` |
 - **The checkout page:**
-  - Uses `SiteHeader variant="checkout"`.
+  - Renders no header: the layout shows the checkout header (`SiteHeader variant="checkout"`) on `/checkout` automatically (F0 review). Treat `quote` as stale while `useCart().quoting` or `quoteFailed` is true, and disable Pay while `quoteFailed`.
   - An empty bag shows "Your bag is empty." and a link back.
   - **Left column:**
     - "Contact": email, then name and phone in a row.
