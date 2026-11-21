@@ -13,8 +13,8 @@ This module owns the ORDER rules and orchestrates the others:
 Stock rules belong to inventory.py; the payments table and provider to payments.py.
 
 CHECKOUT IN THREE STEPS
-  1. place_order: one transaction creates the order, its items, every
-     reservation and a pending payment, then COMMITS.
+  1. place_order: one transaction creates the order, its items, its delivery
+     address, every reservation and a pending payment, then COMMITS.
   2. pay_order: calls the payment provider with NO transaction open. A remote
      call can take seconds; holding row locks that long would block every
      other checkout for the same products.
@@ -25,6 +25,7 @@ the same checkout resumes at step 2, which is safe because the provider charges
 at most once per payment key.
 """
 
+import dataclasses
 import hashlib
 import json
 from collections.abc import Iterable
@@ -36,8 +37,9 @@ import psycopg
 from psycopg.rows import dict_row
 
 from commercelab.config import settings
-from commercelab.domain import inventory, payments
+from commercelab.domain import customers, inventory, payments
 from commercelab.domain.customers import Contact, DeliveryAddress
+from commercelab.domain.pricing import STANDARD_DELIVERY, vat_included
 
 
 class OrderNotFound(Exception):
@@ -107,8 +109,19 @@ def normalise_items(items: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
     return sorted(merged.items())
 
 
-def request_hash(customer_id: int, lines: list[tuple[int, int]]) -> str:
-    body = {"customer_id": customer_id, "items": [list(line) for line in lines]}
+def request_hash(
+    customer_id: int, lines: list[tuple[int, int]], address: DeliveryAddress
+) -> str:
+    """The fingerprint of a checkout request: who, what, and where it goes.
+
+    The address is part of it, so a retry with the same key but a changed
+    address is a conflict, not a silent return of the order going elsewhere.
+    """
+    body = {
+        "customer_id": customer_id,
+        "items": [list(line) for line in lines],
+        "address": dataclasses.asdict(address),
+    }
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
 
@@ -146,6 +159,7 @@ def place_order(
     *,
     customer_id: int,
     items: Iterable[tuple[int, int]],
+    address: DeliveryAddress,
     idempotency_key: str,
 ) -> tuple[int, bool]:
     """Create a pending order with its stock reserved and a pending payment.
@@ -158,7 +172,7 @@ def place_order(
     The stock is held for settings.reservation_hold_minutes; see reconcile().
     """
     lines = normalise_items(items)
-    fingerprint = request_hash(customer_id, lines)
+    fingerprint = request_hash(customer_id, lines, address)
     hold = timedelta(minutes=settings.reservation_hold_minutes)
 
     with conn.transaction():
@@ -195,6 +209,13 @@ def place_order(
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 [(order_id, p, q, *prices[p]) for p, q in lines],
             )
+        conn.execute(
+            "INSERT INTO order_addresses "
+            "(order_id, name, phone, company, vat_number, line1, line2, city, postcode, country) "
+            "VALUES (%(order_id)s, %(name)s, %(phone)s, %(company)s, %(vat_number)s, "
+            "%(line1)s, %(line2)s, %(city)s, %(postcode)s, %(country)s)",
+            {"order_id": order_id, **dataclasses.asdict(address)},
+        )
         for product_id, quantity in lines:  # already in product_id order
             inventory.reserve(conn, order_id, product_id, quantity, hold=hold)
         payments.create_pending(conn, order_id, total)
@@ -355,11 +376,13 @@ def checkout(
     *,
     customer_id: int,
     items: Iterable[tuple[int, int]],
+    address: DeliveryAddress,
     idempotency_key: str,
 ) -> CheckoutResult:
-    """Place, pay and settle. Safe to call again with the same key and cart."""
+    """Place, pay and settle. Safe to call again with the same key, cart and address."""
     order_id, created = place_order(
-        conn, customer_id=customer_id, items=items, idempotency_key=idempotency_key
+        conn, customer_id=customer_id, items=items, address=address,
+        idempotency_key=idempotency_key,
     )
     pay_order(conn, provider, order_id)  # resumes an interrupted or unknown payment
     return CheckoutResult(get_order(conn, order_id), created)
@@ -377,8 +400,17 @@ def guest_checkout(
     """Checkout without an account: find or create the customer by email, then checkout.
 
     The order dict has the same shape as get_order_by_token's.
+
+    The customer is committed on its own, before the order. So any refused
+    checkout (not enough stock, an unknown or discontinued product, an
+    idempotency conflict) can leave a customer row with no orders. That is
+    harmless: the next checkout with that email finds and reuses it.
     """
-    raise NotImplementedError("b-checkout")
+    customer_id = customers.find_or_create(conn, contact)
+    return checkout(
+        conn, provider, customer_id=customer_id, items=items, address=address,
+        idempotency_key=idempotency_key,
+    )
 
 
 def get_order_by_token(conn: psycopg.Connection, token: str) -> dict:
@@ -386,24 +418,60 @@ def get_order_by_token(conn: psycopg.Connection, token: str) -> dict:
 
     The shape is every OrderOut field, plus the internal `id`.
     """
-    raise NotImplementedError("b-checkout")
+    row = conn.execute("SELECT id FROM orders WHERE public_token = %s", [token]).fetchone()
+    if row is None:
+        raise OrderNotFound(token)
+    return get_order(conn, row[0])
 
 
 def get_order(conn: psycopg.Connection, order_id: int) -> dict:
-    """An order as the customer sees it: no unit costs."""
+    """An order as the customer sees it: every OrderOut field, plus the internal `id`.
+
+    No unit costs and no customer id. customer_name is the delivery address's
+    name, or the customer's for orders placed without an address (seeded ones).
+    """
     with conn.cursor(row_factory=dict_row) as cur:
         order = cur.execute(
-            "SELECT o.id, o.customer_id, o.status, o.total, o.created_at, "
+            "SELECT o.id, o.public_token AS token, o.status, o.total, o.created_at, "
+            "       coalesce(a.name, c.name) AS customer_name, "
             "       (SELECT p.status FROM payments p WHERE p.order_id = o.id "
             "        ORDER BY p.id DESC LIMIT 1) AS payment_status "
-            "FROM orders o WHERE o.id = %s",
+            "FROM orders o "
+            "JOIN customers c ON c.id = o.customer_id "
+            "LEFT JOIN order_addresses a ON a.order_id = o.id "
+            "WHERE o.id = %s",
             [order_id],
         ).fetchone()
         if order is None:
             raise OrderNotFound(order_id)
-        order["items"] = cur.execute(
-            "SELECT product_id, quantity, unit_price FROM order_items "
+        items = cur.execute(
+            "SELECT product_id, sku, product_name, quantity, unit_price FROM order_items "
             "WHERE order_id = %s ORDER BY product_id",
             [order_id],
         ).fetchall()
-    return order
+        address = cur.execute(
+            "SELECT name, phone, company, vat_number, line1, line2, city, postcode, country "
+            "FROM order_addresses WHERE order_id = %s",
+            [order_id],
+        ).fetchone()
+
+    for item in items:
+        item["line_total"] = item["unit_price"] * item["quantity"]
+    total = order["total"]
+    return {
+        "id": order["id"],
+        "reference": order_reference(order["id"]),
+        "token": order["token"],
+        "status": order["status"],
+        "payment_status": order["payment_status"],
+        "created_at": order["created_at"],
+        "customer_name": order["customer_name"],
+        "items": items,
+        # Delivery is free, so the subtotal is the total; orders.total stays the
+        # amount charged, equal to the sum of its items (a tested invariant).
+        "subtotal": total,
+        "delivery": STANDARD_DELIVERY,
+        "total": total,
+        "vat_included": vat_included(total),
+        "address": address,
+    }
