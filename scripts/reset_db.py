@@ -2,15 +2,14 @@
 
     uv run python -m scripts.reset_db
 
-Creates the database if it is missing, applies commercelab/data/db.sql (which
-drops and recreates every table), then loads seed 42 with the cached stock-photo
-bytes, in one transaction. Run scripts.fetch_images first so the bytes are cached.
+Checks that every manifest image is cached, then creates the database if it is
+missing, applies commercelab/data/db.sql (which drops and recreates every table),
+and loads seed 42 with the cached stock-photo bytes in one transaction. A missing
+image exits before the database is touched; run scripts.fetch_images first.
 
 It refuses unless APP_ENV=demo and the database is named `commercelab` or ends in
 `_e2e`. It never touches a shop's real database, nor the `_test` database that the
 test suite rebuilds itself.
-
-Paths are relative to the repo root: run it from there.
 """
 
 import argparse
@@ -23,7 +22,8 @@ from commercelab.config import settings
 from commercelab.data import db
 from scripts import image_manifest, seed
 
-SCHEMA_FILE = Path("commercelab/data/db.sql")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_FILE = REPO_ROOT / "commercelab" / "data" / "db.sql"
 SEED = 42
 
 
@@ -41,18 +41,26 @@ def main(argv: list[str] | None = None) -> None:
             "and the database must be named 'commercelab' or end in '_e2e'."
         )
 
+    # Check every image before any database work, so a missing image leaves the database untouched.
+    try:
+        for images in image_manifest.load_manifest().values():
+            for image in images:
+                image_manifest.cached_bytes(image.sha256)
+    except FileNotFoundError as exc:
+        sys.exit(str(exc))
+
     db.create_database_if_missing(settings.database_url)
     # db.sql has its own BEGIN/COMMIT, so it runs on an autocommit connection, not inside a transaction.
     with db.connect() as conn:
         conn.execute(SCHEMA_FILE.read_text())
 
     products, customers, data = seed.generate(SEED)
-    try:
-        with db.connect() as conn, conn.transaction():
+    with db.connect() as conn, conn.transaction():
+        try:
             seed.write(conn, products, customers, data,
                        image_bytes=image_manifest.cached_bytes)
-    except FileNotFoundError as exc:  # a missing cached image: say what to run
-        sys.exit(str(exc))
+        except FileNotFoundError as exc:  # narrow backstop: the up-front check should have caught it
+            sys.exit(str(exc))
 
     print(f"Reset {dbname}: schema applied, seeded (seed={SEED})")
 
