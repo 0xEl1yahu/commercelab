@@ -104,8 +104,8 @@ Rules for streams:
 
 | When | Action |
 |---|---|
-| Before Phase 0 | Start Docker Desktop and set Resources to about 10 GB of memory and 8 CPUs |
-| Before Phase 0 | Have at least 20 GB of free disk; there were 12 GB when checked |
+| Before Phase 0 | **Done.** Docker Desktop is running with 10 GB of memory (9.7 GiB usable) and 8 CPUs |
+| Before Phase 0 | **Done, and not a constraint.** Docker's data lives on the external LaCie drive (about 790 GB free). The Mac's internal disk only holds the stream worktrees, which are small |
 | Before Phase 2 | Approve pushing `storefront` and `sf/f-*` to the public GitHub repo |
 | Before Phase 2 | Set up the cloud environment as above |
 
