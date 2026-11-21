@@ -338,7 +338,7 @@ Leaves the suite green, and fixes every name, shape and route the other tasks an
     |---|---|
     | keyboards | Layout, Connection, Switches, Battery, Weight |
     | mice | Sensor, Connection, Buttons, Battery, Weight |
-    | monitors | Size, Resolution, Panel, Ports, Stand |
+    | monitors | Size, Resolution, Panel, Ports, Stand. Monitor arms use Screen size, VESA, Load per arm, Material, Mount instead *(coordinator's call after the B1 review)* |
     | audio | Type, Connection, Battery, Microphone, Weight |
     | desk | Dimensions, Material, Power, Weight |
     | cables | Length, Ports, Power delivery, Data rate |
