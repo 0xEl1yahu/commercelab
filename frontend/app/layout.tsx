@@ -31,7 +31,8 @@ export const viewport: Viewport = {
 
 /**
  * Every page renders inside <main> here: pages don't add their own <main>, header
- * or footer. The bag drawer is mounted once, inside the cart provider.
+ * or footer (the header for /checkout is chosen by ShopHeaderSlot). The bag drawer
+ * is mounted once, inside the cart provider.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -44,9 +45,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           >
             Skip to content
           </a>
-          <ShopHeaderSlot>
-            <SiteHeader />
-          </ShopHeaderSlot>
+          <ShopHeaderSlot shop={<SiteHeader />} checkout={<SiteHeader variant="checkout" />} />
           <main id="main" className="flex flex-1 flex-col">
             {children}
           </main>

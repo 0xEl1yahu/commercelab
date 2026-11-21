@@ -4,12 +4,13 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 /**
- * Renders the shop header everywhere except /checkout, which shows the minimal
- * <SiteHeader variant="checkout" /> from its own page instead. (A route group can't
- * do this here: every route sits directly under app/.)
+ * Picks the header for the current route: `checkout` (<SiteHeader variant="checkout" />)
+ * on /checkout, `shop` (<SiteHeader />) everywhere else. app/layout.tsx mounts it once,
+ * outside <main>, so the header is always the page's banner landmark: pages never
+ * render a header. (A route group can't do this: every route sits directly under app/.)
  */
-export function ShopHeaderSlot({ children }: { children: ReactNode }) {
+export function ShopHeaderSlot({ shop, checkout }: { shop: ReactNode; checkout: ReactNode }) {
   const pathname = usePathname();
-  if (pathname === "/checkout" || pathname?.startsWith("/checkout/")) return null;
-  return children;
+  const onCheckout = pathname === "/checkout" || pathname?.startsWith("/checkout/");
+  return onCheckout ? checkout : shop;
 }

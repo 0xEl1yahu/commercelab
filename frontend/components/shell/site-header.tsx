@@ -35,17 +35,19 @@ function Wordmark() {
 
 /**
  * The sticky shop header: wordmark, category links (from GET /categories, in nav
- * order) and the bag. It is mounted by app/layout.tsx on every page except
- * /checkout, whose page renders <SiteHeader variant="checkout" /> itself.
+ * order) and the bag. Only app/layout.tsx mounts it, through ShopHeaderSlot: the
+ * shop variant everywhere, the checkout variant on /checkout. Pages never render it.
  *
- * Its height is var(--header-height) (52px; 92px below md, where the categories take
- * a second, scrollable row), for sticky offsets such as the product page's buy box.
+ * The shop header's rendered height, border included, is exactly var(--header-height):
+ * 52px from md up, 92px below md (where the categories take a second, scrollable
+ * row). Use it for sticky offsets such as the product page's buy box. The checkout
+ * header is 52px at every width.
  */
 export async function SiteHeader({ variant = "shop" }: Props) {
   if (variant === "checkout") {
     return (
-      <header className="sticky top-0 z-40 border-b border-line bg-white/80 backdrop-blur-xl backdrop-saturate-150">
-        <div className="shop-container flex h-[52px] items-center justify-between">
+      <header className="sticky top-0 z-40 box-border h-[52px] border-b border-line bg-white/80 backdrop-blur-xl backdrop-saturate-150">
+        <div className="shop-container flex h-full items-center justify-between">
           <Wordmark />
           <p className="inline-flex items-center gap-1.5 text-footnote text-ink-2">
             <LockGlyph />
@@ -59,12 +61,13 @@ export async function SiteHeader({ variant = "shop" }: Props) {
   const categories = await loadCategories();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-white/80 backdrop-blur-xl backdrop-saturate-150">
-      <div className="shop-container flex h-[var(--header-height)] flex-wrap items-center justify-between md:flex-nowrap md:gap-8">
-        <div className="flex h-[52px] items-center">
+    <header className="sticky top-0 z-40 box-border h-[var(--header-height)] border-b border-line bg-white/80 backdrop-blur-xl backdrop-saturate-150">
+      {/* Content box = header height − 1px border: a 51px row, plus a 40px row below md. */}
+      <div className="shop-container flex h-full flex-wrap items-start justify-between md:flex-nowrap md:items-center md:gap-8">
+        <div className="flex h-[51px] items-center md:h-full">
           <Wordmark />
         </div>
-        <div className="order-2 flex h-[52px] items-center md:order-3">
+        <div className="order-2 flex h-[51px] items-center md:order-3 md:h-full">
           <BagButton />
         </div>
         <nav

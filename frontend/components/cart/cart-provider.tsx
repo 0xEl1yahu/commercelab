@@ -9,8 +9,13 @@
 //   whenever the bag is empty. Show "Your bag is empty." from `lines.length === 0`.
 // - `ready` turns true once the saved bag has been read after mount. Before that,
 //   `lines` is [] only because nothing has been read yet.
-// - `quoting` is true from a change until the quote for it has arrived (or failed),
-//   so a screen can wait for the re-quote before trusting `quote`'s numbers.
+// - `quoting` is true from a change until the quote for it has arrived, or until
+//   every retry has failed, so a screen can wait for the re-quote before trusting
+//   `quote`'s numbers.
+// - A failed quote is retried after 1 s, 2 s and 4 s while the lines stay the same.
+//   If all of those fail, `quoteFailed` is true (and `quote` is the last good one,
+//   possibly for other lines) until a quote succeeds or the lines change. open()
+//   asks again whenever the quote doesn't describe the current lines.
 // - `count` sums the quoted quantities, so a sold-out line counts 0.
 // - `notices[product_id]` says the server cut that line (from -> to). A notice stays
 //   until the shopper edits that line or closes the drawer.
@@ -39,6 +44,7 @@ import {
 import type { CartQuote } from "@/lib/types";
 
 export const QUOTE_DEBOUNCE_MS = 250;
+export const QUOTE_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export type CartNotice = { from: number; to: number };
 
@@ -52,6 +58,7 @@ export type CartContextValue = {
   isOpen: boolean;
   ready: boolean;
   quoting: boolean;
+  quoteFailed: boolean;
   add: (product_id: number, qty?: number) => void;
   setQuantity: (product_id: number, qty: number) => void;
   remove: (product_id: number) => void;
@@ -95,6 +102,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const [quoting, setQuoting] = useState(false);
+  const [quoteFailed, setQuoteFailed] = useState(false);
+  // Bumped by open() to ask again for the same lines after the retries ran out.
+  const [requoteToken, setRequoteToken] = useState(0);
+
+  // The newest lines, readable synchronously by the actions.
+  const linesRef = useRef<CartLine[]>([]);
+  const quotingRef = useRef(false);
+  const commitLines = useCallback((next: CartLine[]) => {
+    linesRef.current = next;
+    setLines(next);
+  }, []);
 
   // The lines the current quote describes; a change to anything else re-quotes.
   const quotedKey = useRef<string>(keyOf([]));
@@ -104,17 +122,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // Read the saved bag once, after mount (localStorage doesn't exist on the server).
   useEffect(() => {
     const saved = readSaved();
+    linesRef.current = saved;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading external storage after hydration
     setLines(saved);
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    quotingRef.current = quoting;
+  }, [quoting]);
 
   // Write on change.
   useEffect(() => {
     if (ready) save(lines);
   }, [lines, ready]);
 
-  // Re-quote 250 ms after the last change.
+  // Re-quote 250 ms after the last change, retrying after 1 s, 2 s and 4 s.
   useEffect(() => {
     if (!ready) return;
     const key = keyOf(lines);
@@ -122,6 +145,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (key === quotedKey.current) {
       // Back to what the current quote describes (e.g. + then − within 250 ms).
       setQuoting(false);
+      setQuoteFailed(false);
       return;
     }
     if (lines.length === 0) {
@@ -129,11 +153,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- an empty bag needs no quote
       setQuote(null);
       setQuoting(false);
+      setQuoteFailed(false);
       return;
     }
 
     setQuoting(true);
-    const timer = window.setTimeout(async () => {
+    setQuoteFailed(false);
+    let cancelled = false;
+    let timer: number | undefined;
+    const stale = () => cancelled || seq !== requestSeq.current;
+
+    const attempt = async (retry: number) => {
       try {
         const res = await fetch("/api/cart/quote", {
           method: "POST",
@@ -142,7 +172,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
         if (!res.ok) throw new Error(`cart quote failed: ${res.status}`);
         const next = (await res.json()) as CartQuote;
-        if (seq !== requestSeq.current) return;
+        if (stale()) return;
 
         const applied = applyQuote(lines, next);
         // This quote already describes the corrected lines (its quantities and totals
@@ -150,7 +180,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         quotedKey.current = keyOf(applied.lines);
         setQuote(next);
         if (applied.adjusted.length > 0 || applied.lines.length !== lines.length) {
-          setLines(applied.lines);
+          commitLines(applied.lines);
         }
         if (applied.adjusted.length > 0) {
           setNotices((current) => {
@@ -161,37 +191,73 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
         setQuoting(false);
       } catch {
-        // Network or server trouble: keep the last quote; the next change asks again.
-        if (seq === requestSeq.current) setQuoting(false);
+        // Network or server trouble: keep the last quote and try again, same lines.
+        if (stale()) return;
+        if (retry < QUOTE_RETRY_DELAYS_MS.length) {
+          timer = window.setTimeout(() => void attempt(retry + 1), QUOTE_RETRY_DELAYS_MS[retry]);
+        } else {
+          setQuoting(false);
+          setQuoteFailed(true);
+        }
       }
-    }, QUOTE_DEBOUNCE_MS);
+    };
 
-    return () => window.clearTimeout(timer);
-  }, [lines, ready]);
+    timer = window.setTimeout(() => void attempt(0), QUOTE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [lines, ready, requoteToken, commitLines]);
 
-  const add = useCallback((product_id: number, qty = 1) => {
-    setLines((current) => addLine(current, product_id, qty));
-    setNotices((current) => withoutNotice(current, product_id));
-    setLastAdded(product_id);
-  }, []);
+  /** Applies an edit to the newest lines; returns whether anything changed. */
+  const edit = useCallback(
+    (product_id: number, change: (current: CartLine[]) => CartLine[]): boolean => {
+      const current = linesRef.current;
+      const next = change(current);
+      if (keyOf(next) === keyOf(current)) return false;
+      commitLines(next);
+      setNotices((notices) => withoutNotice(notices, product_id));
+      return true;
+    },
+    [commitLines],
+  );
 
-  const setQuantity = useCallback((product_id: number, qty: number) => {
-    setLines((current) => setLineQuantity(current, product_id, qty));
-    setNotices((current) => withoutNotice(current, product_id));
-  }, []);
+  const add = useCallback(
+    (product_id: number, qty = 1) => {
+      // A 51st line, or a line already at 100, changes nothing: nothing was "added".
+      if (edit(product_id, (current) => addLine(current, product_id, qty))) setLastAdded(product_id);
+    },
+    [edit],
+  );
 
-  const remove = useCallback((product_id: number) => {
-    setLines((current) => removeLine(current, product_id));
-    setNotices((current) => withoutNotice(current, product_id));
-  }, []);
+  const setQuantity = useCallback(
+    (product_id: number, qty: number) => {
+      edit(product_id, (current) => setLineQuantity(current, product_id, qty));
+    },
+    [edit],
+  );
+
+  const remove = useCallback(
+    (product_id: number) => {
+      edit(product_id, (current) => removeLine(current, product_id));
+    },
+    [edit],
+  );
 
   const clear = useCallback(() => {
-    setLines([]);
+    commitLines([]);
     setNotices({});
     setLastAdded(null);
-  }, []);
+  }, [commitLines]);
 
-  const open = useCallback(() => setIsOpen(true), []);
+  const open = useCallback(() => {
+    setIsOpen(true);
+    // Ask again if the quote doesn't describe these lines and nothing is on its way
+    // (the retries ran out, or the quote never arrived).
+    if (keyOf(linesRef.current) !== quotedKey.current && !quotingRef.current) {
+      setRequoteToken((token) => token + 1);
+    }
+  }, []);
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -211,6 +277,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       isOpen,
       ready,
       quoting,
+      quoteFailed,
       add,
       setQuantity,
       remove,
@@ -218,7 +285,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       open,
       close,
     };
-  }, [lines, quote, notices, lastAdded, isOpen, ready, quoting, add, setQuantity, remove, clear, open, close]);
+  }, [lines, quote, notices, lastAdded, isOpen, ready, quoting, quoteFailed, add, setQuantity, remove, clear, open, close]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

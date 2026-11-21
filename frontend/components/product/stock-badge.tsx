@@ -15,10 +15,11 @@ const DOT: Record<Props["status"], string> = {
   out_of_stock: "bg-danger",
 };
 
+/** The label for a band. A low_stock band without a count (never sent by the API) reads "In stock". */
 export function stockLabel(status: Props["status"], left: number | null | undefined): string {
-  if (status === "in_stock") return "In stock";
   if (status === "out_of_stock") return "Out of stock";
-  return left == null ? "Only a few left" : `Only ${left} left`;
+  if (status === "low_stock" && left != null) return `Only ${left} left`;
+  return "In stock";
 }
 
 /** A coloured dot and the stock label: "In stock", "Only 2 left", "Out of stock". */

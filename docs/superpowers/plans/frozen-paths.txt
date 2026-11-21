@@ -99,6 +99,7 @@ frontend/components/cart/cart-provider.tsx
 frontend/components/cart/bag-button.tsx
 frontend/components/product/product-image.tsx
 frontend/components/product/stock-badge.tsx
+frontend/components/product/stock-badge.test.ts
 frontend/components/product/product-tile.tsx
 frontend/components/ui/button.tsx
 frontend/components/ui/checkbox.tsx
