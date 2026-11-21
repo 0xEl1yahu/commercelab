@@ -1,5 +1,6 @@
 """Tests for orders.py: checkout end to end, against the Notion invariants (page 4)."""
 
+import dataclasses
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
@@ -8,6 +9,7 @@ import pytest
 
 from commercelab.data import db
 from commercelab.domain import inventory, orders
+from commercelab.domain.customers import Contact
 from commercelab.domain.inventory import InsufficientStock
 from commercelab.domain.orders import (
     CustomerNotFound,
@@ -15,7 +17,7 @@ from commercelab.domain.orders import (
     OrderNotFound,
     ProductUnavailable,
 )
-from tests.support.fakes import ScriptedProvider, make_shop
+from tests.support.fakes import DELIVERY, ScriptedProvider, make_shop
 from tests.support.invariants import assert_all_hold as assert_invariants
 
 
@@ -34,9 +36,10 @@ def count(conn, table):
     return conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 
 
-def buy(conn, provider, shop, items, key="key-1"):
+def buy(conn, provider, shop, items, key="key-1", address=DELIVERY):
     return orders.checkout(
-        conn, provider, customer_id=shop["customer"], items=items, idempotency_key=key
+        conn, provider, customer_id=shop["customer"], items=items, address=address,
+        idempotency_key=key,
     )
 
 
@@ -62,7 +65,8 @@ def test_order_items_freeze_price_and_cost_at_checkout(conn, shop):
                  [shop["keyboard"]])
 
     assert orders.get_order(conn, order["id"])["items"] == [
-        {"product_id": shop["keyboard"], "quantity": 1, "unit_price": Decimal("199.00")}
+        {"product_id": shop["keyboard"], "sku": "KB", "product_name": "Keyboard",
+         "quantity": 1, "unit_price": Decimal("199.00"), "line_total": Decimal("199.00")}
     ]
     cost = conn.execute("SELECT unit_cost FROM order_items WHERE order_id = %s",
                         [order["id"]]).fetchone()[0]
@@ -71,7 +75,102 @@ def test_order_items_freeze_price_and_cost_at_checkout(conn, shop):
 
 def test_customer_facing_order_has_no_unit_cost(conn, shop):
     order, _ = buy(conn, ScriptedProvider(), shop, [(shop["mouse"], 1)])
-    assert all(set(item) == {"product_id", "quantity", "unit_price"} for item in order["items"])
+    assert all(
+        set(item) == {"product_id", "sku", "product_name", "quantity", "unit_price", "line_total"}
+        for item in order["items"]
+    )
+    assert "unit_cost" not in order
+
+
+def test_order_items_keep_name_and_sku_after_a_rename(conn, shop):
+    order, _ = buy(conn, ScriptedProvider(), shop, [(shop["keyboard"], 1)])
+    conn.execute("UPDATE products SET name = 'Keyboard Mk II', sku = 'KB-2' WHERE id = %s",
+                 [shop["keyboard"]])
+
+    [item] = orders.get_order(conn, order["id"])["items"]
+    assert (item["product_name"], item["sku"]) == ("Keyboard", "KB")
+
+
+def test_order_totals_include_vat_and_free_delivery(conn, shop):
+    order, _ = buy(conn, ScriptedProvider(), shop, [(shop["keyboard"], 1), (shop["mouse"], 2)])
+
+    assert [item["line_total"] for item in order["items"]] == [Decimal("199.00"), Decimal("50.00")]
+    assert order["subtotal"] == Decimal("249.00")
+    assert order["delivery"] == Decimal("0.00")
+    assert order["total"] == Decimal("249.00")
+    assert order["vat_included"] == Decimal("41.50")  # 249.00 / 6
+
+
+# --- the delivery address, the reference and the token ----------------------------
+
+def test_order_keeps_the_delivery_address(conn, shop):
+    address = dataclasses.replace(DELIVERY, line2="Flat 2", company="Northfold Ltd")
+    order, _ = buy(conn, ScriptedProvider(), shop, [(shop["mouse"], 1)], address=address)
+
+    assert order["address"] == {
+        "name": "Ann Lee", "phone": "07700 900000", "company": "Northfold Ltd",
+        "vat_number": None, "line1": "1 Test Street", "line2": "Flat 2", "city": "Leeds",
+        "postcode": "LS1 1AA", "country": "GB",
+    }
+    # The recipient's name, not the customer record's ('Ann').
+    assert order["customer_name"] == "Ann Lee"
+    assert count(conn, "order_addresses") == 1
+    assert_invariants(conn)
+
+
+def test_order_reference_format():
+    assert orders.order_reference(7) == "CL-00007"
+    assert orders.order_reference(1501) == "CL-01501"
+
+
+def test_order_carries_its_reference_and_a_token(conn, shop):
+    order, _ = buy(conn, ScriptedProvider(), shop, [(shop["mouse"], 1)])
+    assert order["reference"] == orders.order_reference(order["id"])
+    assert len(order["token"]) == 32 and int(order["token"], 16) >= 0
+
+
+def test_get_order_by_token(conn, shop):
+    order, _ = buy(conn, ScriptedProvider(), shop, [(shop["mouse"], 1)])
+    assert orders.get_order_by_token(conn, order["token"]) == order
+
+
+def test_unknown_token_raises(conn, shop):
+    buy(conn, ScriptedProvider(), shop, [(shop["mouse"], 1)])
+    with pytest.raises(OrderNotFound) as raised:
+        orders.get_order_by_token(conn, "0" * 32)
+    assert raised.value.ref == "0" * 32
+
+
+def test_guest_checkout_uses_the_customer_with_that_email_and_is_retry_safe(conn, shop):
+    contact = Contact(email="ANN@Example.com", name="Ann Lee", phone="07700 900000")
+    provider = ScriptedProvider()
+
+    def guest_buy():
+        return orders.guest_checkout(conn, provider, contact=contact, address=DELIVERY,
+                                     items=[(shop["mouse"], 1)], idempotency_key="guest-1")
+
+    first, again = guest_buy(), guest_buy()
+    assert (first.created, again.created) == (True, False)
+    assert again.order == first.order
+    assert first.order["status"] == "paid"
+    assert len(provider.charged) == 1
+    owner = conn.execute("SELECT customer_id FROM orders WHERE id = %s",
+                         [first.order["id"]]).fetchone()[0]
+    assert owner == shop["customer"]  # make_shop's ann@example.com, not a new customer
+    assert count(conn, "customers") == 1
+    assert_invariants(conn)
+
+
+def test_seeded_order_without_address_reads_back_with_none(conn, seeded):
+    order_id, customer_name = conn.execute(
+        "SELECT o.id, c.name FROM orders o JOIN customers c ON c.id = o.customer_id "
+        "ORDER BY o.id LIMIT 1"
+    ).fetchone()
+    order = orders.get_order(conn, order_id)
+
+    assert order["address"] is None
+    assert order["customer_name"] == customer_name
+    assert orders.get_order_by_token(conn, order["token"]) == order
 
 
 # --- payment outcomes -------------------------------------------------------------
@@ -116,7 +215,8 @@ def test_retry_after_a_timeout_completes_the_order_with_one_charge(conn, shop):
 def test_crash_between_placing_and_paying_is_resumed_by_a_retry(conn, shop):
     """Simulate the process dying after step 1: only place_order ran."""
     order_id, created = orders.place_order(
-        conn, customer_id=shop["customer"], items=[(shop["mouse"], 1)], idempotency_key="key-1")
+        conn, customer_id=shop["customer"], items=[(shop["mouse"], 1)], address=DELIVERY,
+        idempotency_key="key-1")
     assert created is True
     assert orders.get_order(conn, order_id)["status"] == "pending"
 
@@ -156,6 +256,19 @@ def test_same_key_with_a_different_cart_is_refused(conn, shop):
     with pytest.raises(IdempotencyConflict):
         buy(conn, provider, shop, [(shop["mouse"], 5)])
     assert (count(conn, "orders"), stock(conn, shop["mouse"])) == before
+
+
+def test_same_key_different_address_is_a_conflict(conn, shop):
+    provider = ScriptedProvider()
+    first, _ = buy(conn, provider, shop, [(shop["mouse"], 1)])
+    calls_after_first = provider.calls
+
+    moved = dataclasses.replace(DELIVERY, line1="2 Other Street")
+    with pytest.raises(IdempotencyConflict):
+        buy(conn, provider, shop, [(shop["mouse"], 1)], address=moved)
+    assert count(conn, "orders") == 1
+    assert orders.get_order(conn, first["id"])["address"]["line1"] == "1 Test Street"
+    assert provider.calls == calls_after_first
 
 
 # --- refusals: nothing is created ------------------------------------------------------
@@ -200,7 +313,7 @@ def test_inactive_and_missing_products_are_unavailable(conn, shop):
 def test_unknown_customer_is_refused(conn, shop):
     with pytest.raises(CustomerNotFound):
         orders.checkout(conn, ScriptedProvider(), customer_id=shop["customer"] + 1000,
-                        items=[(shop["mouse"], 1)], idempotency_key="key-1")
+                        items=[(shop["mouse"], 1)], address=DELIVERY, idempotency_key="key-1")
 
 
 # --- request normalisation ------------------------------------------------------------
