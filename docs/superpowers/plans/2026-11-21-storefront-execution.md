@@ -60,7 +60,8 @@ Rules for streams:
 2. **A contract problem stops the stream.** The agent reports it and doesn't work around it. The coordinator fixes it on `storefront` (regenerating `openapi.json` and `lib/api-types.ts` if the models change), and every open stream rebases. That is the only way frozen files change after Phase 0.
 3. **Each stream owns distinct files.** Shared test files are split by task as listed in the plans. `test_dependencies.py` belongs to B0, `test_catalogue*.py` to B3, `test_order_routes.py` and `test_orders.py` to B5, `test_seed.py` to B1, and `test_image_manifest.py` to B2.
 4. **Merge as soon as a stream passes its review and its tests:** `git merge --no-ff sf/<name>` into `storefront`, then the phase's full test command on the result. The last stream to merge in a phase runs the phase gate. In Phase 1, **B1 merges before B6 runs end to end**, because `reset_db` calls `seed.write(..., image_bytes=...)`, which B1 adds. B6's own unit tests don't depend on it.
-5. **Agents never merge into `main`, and never push without the owner's say-so.**
+5. **Clean up each stream as soon as it merges** (owner's rule, to free memory and disk): `docker rm -f cl-<stream>`, remove its `cl-<stream>-*` volumes, `git worktree remove ../commercelab-worktrees/sf/<stream>`, and `git branch -d sf/<stream>` (`-d` refuses to delete an unmerged branch). If a later fix is needed, cut a fresh branch from `storefront`.
+6. **Agents never merge into `main`, and never push without the owner's say-so.**
 
 ## 4. Where streams run: hybrid (owner's decision)
 
