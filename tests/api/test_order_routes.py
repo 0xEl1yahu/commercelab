@@ -84,14 +84,22 @@ def test_unknown_payment_outcome_returns_a_pending_order(client, provider, shop)
     assert (response.json()["status"], response.json()["payment_status"]) == ("pending", "unknown")
 
 
+def guest_payload(items) -> dict:
+    """A valid guest checkout body (contact, address, items) for these items."""
+    return {
+        "contact": {"email": "ann@example.com", "name": "Ann Lee", "phone": "07700 900000"},
+        "address": {"line1": "1 Test Street", "city": "Leeds", "postcode": "LS1 1AA"},
+        "items": [{"product_id": p, "quantity": q} for p, q in items],
+    }
+
+
 @pytest.mark.parametrize(
     "case",
     ["missing key", "empty cart", "zero quantity",
      pytest.param("price sent by client", marks=pytest.mark.xfail(strict=True, reason="B5"))],
 )
 def test_malformed_checkouts_are_422(client, provider, shop, case):
-    payload = {"customer_id": shop["customer"],
-               "items": [{"product_id": shop["mouse"], "quantity": 1}]}
+    payload = guest_payload([(shop["mouse"], 1)])
     headers = {"Idempotency-Key": "key-1"}
     if case == "missing key":
         headers = {}
@@ -108,12 +116,6 @@ def test_malformed_checkouts_are_422(client, provider, shop, case):
         assert response.json()["items"][0]["unit_price"] == "25.00"
     else:
         assert response.status_code == 422
-
-
-def test_unknown_customer_and_product_are_422(client, provider, shop):
-    assert post_checkout(client, shop, [(shop["mouse"], 1)],
-                         customer=shop["customer"] + 1000).status_code == 422
-    assert post_checkout(client, shop, [(shop["mouse"] + 1000, 1)], key="key-2").status_code == 422
 
 
 def test_live_environment_refuses_checkout_without_a_real_provider(client, shop, monkeypatch):

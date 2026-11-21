@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from commercelab.api.dependencies import Conn
 from commercelab.api.models import (
+    ERROR_OR_VALIDATION,
     CategoryOut,
     ErrorOut,
     ProductCardOut,
@@ -16,7 +17,7 @@ from commercelab.domain import catalogue
 router = APIRouter(tags=["catalogue"])
 
 
-@router.get("/products")
+@router.get("/products", responses={422: ERROR_OR_VALIDATION})
 def list_products(
     conn: Conn,
     *,

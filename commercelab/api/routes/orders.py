@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Response
 
 from commercelab.api.dependencies import Conn, Provider
 from commercelab.api.models import (
+    ERROR_OR_VALIDATION,
     CheckoutRequest,
     ErrorOut,
     InsufficientStockOut,
@@ -20,8 +21,13 @@ router = APIRouter(tags=["orders"])
     status_code=201,
     responses={
         200: {"model": OrderOut, "description": "A retry: the original order, unchanged"},
-        409: {"model": InsufficientStockOut, "description": "Not enough stock, or key reused"},
-        422: {"model": ErrorOut},
+        409: {
+            # InsufficientStockOut for stock; ErrorOut for a reused Idempotency-Key.
+            "model": InsufficientStockOut | ErrorOut,
+            "description": "Not enough stock (with the numbers), or the key was used for "
+            "a different request",
+        },
+        422: ERROR_OR_VALIDATION,
     },
 )
 def checkout(

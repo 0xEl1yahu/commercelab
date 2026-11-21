@@ -1118,21 +1118,36 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InsufficientStockOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InsufficientStockOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorOut"
+                    }
+                  ],
+                  "title": "Response 409 Checkout Checkout Post"
                 }
               }
             },
-            "description": "Not enough stock, or key reused"
+            "description": "Not enough stock (with the numbers), or the key was used for a different request"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request: a string detail (ErrorOut) or a validation list"
           }
         },
         "summary": "Checkout",
@@ -1506,11 +1521,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request: a string detail (ErrorOut) or a validation list"
           }
         },
         "summary": "List Products",

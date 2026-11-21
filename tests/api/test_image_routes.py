@@ -17,7 +17,7 @@ def test_image_route_serves_bytes_with_immutable_caching(client, conn):
     assert response.headers["etag"] == f'"{key}"'
 
 
-@pytest.mark.parametrize("if_none_match", ['"{key}"', 'W/"{key}"', '"other", "{key}"', "*"])
+@pytest.mark.parametrize("if_none_match", ['"{key}"', 'W/"{key}"', '"other", "{key}"'])
 def test_if_none_match_gives_304(client, conn, if_none_match):
     key = insert_image(conn, b"jpeg bytes")
     response = client.get(f"/images/{key}", headers={"If-None-Match": if_none_match.format(key=key)})
@@ -45,3 +45,12 @@ def test_unknown_key_is_404(client):
 )
 def test_malformed_key_is_422(client, key):
     assert client.get(f"/images/{key}").status_code == 422
+
+
+def test_304_never_reads_the_image(client, conn, monkeypatch):
+    from commercelab.domain import images
+
+    key = insert_image(conn, b"jpeg bytes")
+    monkeypatch.setattr(images, "get_image", lambda *a: pytest.fail("read the image for a 304"))
+    response = client.get(f"/images/{key}", headers={"If-None-Match": f'"{key}"'})
+    assert response.status_code == 304

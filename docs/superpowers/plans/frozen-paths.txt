@@ -6,6 +6,8 @@
 #               TypedDicts, dataclasses and constant values may not. Other functions in
 #               these files belong to the stream that owns the file.
 # [stubs]       (added by F0) Exists so imports resolve; only the owning stream implements it.
+# [coordinator] Only the coordinator changes these, on `storefront`. A stream that needs a
+#               dependency asks the coordinator instead of editing them.
 #
 # A contract problem stops the stream: report it to the coordinator, who fixes it here on
 # `storefront` and regenerates openapi.json. Contracts are fixed at the source, never
@@ -77,7 +79,14 @@ commercelab/domain/customers.py (B5):
     stub for B5: find_or_create
 
 commercelab/domain/orders.py (B5):
-    order_reference (implemented, body frozen too), OrderNotFound, CheckoutResult
+    order_reference (implemented, body frozen too), OrderNotFound
+    CheckoutResult, including its fields .order and .created (routes/orders.py reads both)
+    IdempotencyConflict, ProductUnavailable, CustomerNotFound (api/errors.py maps them)
     stubs for B5: guest_checkout, get_order_by_token
     owned by B5 (not frozen): place_order, checkout, get_order, request_hash,
                               _current_prices and the rest of the module
+
+[coordinator]
+# Dependencies: streams may not add, remove or upgrade packages; ask the coordinator.
+pyproject.toml
+uv.lock

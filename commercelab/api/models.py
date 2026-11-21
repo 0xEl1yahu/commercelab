@@ -242,3 +242,22 @@ class Health(BaseModel):
 
 class ErrorOut(BaseModel):
     detail: str
+
+
+# For a route's `responses`: a 422 is either a domain refusal (ErrorOut, detail
+# is a string) or FastAPI's request validation (HTTPValidationError, detail is
+# a list). Both schemas are always in components: ErrorOut via the routes'
+# 404 and 409 models, HTTPValidationError via FastAPI itself.
+ERROR_OR_VALIDATION = {
+    "description": "Invalid request: a string detail (ErrorOut) or a validation list",
+    "content": {
+        "application/json": {
+            "schema": {
+                "anyOf": [
+                    {"$ref": "#/components/schemas/ErrorOut"},
+                    {"$ref": "#/components/schemas/HTTPValidationError"},
+                ]
+            }
+        }
+    },
+}
