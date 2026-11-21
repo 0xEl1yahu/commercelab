@@ -16,8 +16,9 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from psycopg import conninfo, sql
+from psycopg import conninfo
 
+from commercelab.data import db
 from scripts import seed
 
 SCHEMA_FILE = Path(__file__).resolve().parent.parent / "commercelab" / "data" / "db.sql"
@@ -25,17 +26,6 @@ TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://localhost/commercelab_test"
 )
 SEED = 42
-
-
-def _create_database_if_missing(url: str, dbname: str) -> None:
-    # CREATE DATABASE must run from a different database, outside a transaction.
-    admin_url = conninfo.make_conninfo(url, dbname="postgres")
-    with psycopg.connect(admin_url, autocommit=True) as admin:
-        exists = admin.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s", [dbname]
-        ).fetchone()
-        if not exists:
-            admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
 
 
 @pytest.fixture(scope="session")
@@ -47,7 +37,7 @@ def database_url() -> str:
             f"Refusing to run tests against {dbname!r}: the name must end in '_test'.",
             returncode=1,
         )
-    _create_database_if_missing(TEST_DATABASE_URL, dbname)
+    db.create_database_if_missing(TEST_DATABASE_URL)
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as schema_conn:
         schema_conn.execute(SCHEMA_FILE.read_text())  # db.sql has its own BEGIN/COMMIT
     return TEST_DATABASE_URL

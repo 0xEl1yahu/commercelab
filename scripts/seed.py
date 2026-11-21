@@ -17,7 +17,11 @@ What it simulates (Jan-Oct 2026):
     stock movements that are consistent with that state
   - occasional failed payment attempts before a success, a few 'unknown'
     payments on recent orders, and partial/full refunds on old orders
-  - one limited keyboard with exactly 2 in stock, for the design exercise
+  - one limited product (catalogue_data.LIMITED_SKU) with exactly 2 in stock,
+    for the design exercise
+
+Product identity (sku, slug, name, brand, category) comes from
+scripts/catalogue_data.py. Prices are placeholders until the seed content lands.
 """
 
 import argparse
@@ -32,6 +36,13 @@ import psycopg
 
 from commercelab.config import settings
 from commercelab.data import db
+from scripts import catalogue_data
+from scripts.catalogue_data import (
+    DISCONTINUED_SKU,
+    LIMITED_SKU,
+    LOW_STOCK_SKUS,
+    SOLD_OUT_SKU,
+)
 
 PENNY = Decimal("0.01")
 
@@ -44,35 +55,14 @@ END = datetime(2026, 10, 31, 23, 59, tzinfo=UTC)  # the simulated "now"
 N_CUSTOMERS = 200
 N_ORDERS = 1500
 N_REPRICED = 5
-LIMITED_SKU = "KB-LTD-01"
 
-# sku, name, category, price, unit_cost
-CATALOGUE = [
-    ("KB-TKL-01", "Tenkeyless Mechanical Keyboard", "keyboards", "89.00", "41.00"),
-    ("KB-FULL-01", "Full-size Mechanical Keyboard", "keyboards", "109.00", "52.00"),
-    ("KB-65-01", "65% Wireless Keyboard", "keyboards", "129.00", "63.00"),
-    ("KB-LOW-01", "Low-profile Keyboard", "keyboards", "69.00", "30.00"),
-    ("MS-ERG-01", "Ergonomic Vertical Mouse", "mice", "49.00", "19.50"),
-    ("MS-GAM-01", "Lightweight Gaming Mouse", "mice", "59.00", "24.00"),
-    ("MS-TRV-01", "Travel Mouse", "mice", "25.00", "9.00"),
-    ("MN-27Q-01", "27in QHD Monitor", "monitors", "279.00", "182.00"),
-    ("MN-32K-01", "32in 4K Monitor", "monitors", "449.00", "301.00"),
-    ("MN-24F-01", "24in FHD Monitor", "monitors", "139.00", "88.00"),
-    ("MN-ARM-01", "Single Monitor Arm", "monitors", "45.00", "17.00"),
-    ("AU-HP-01", "Closed-back Headphones", "audio", "99.00", "44.00"),
-    ("AU-EB-01", "Wireless Earbuds", "audio", "79.00", "33.00"),
-    ("AU-MIC-01", "USB Condenser Microphone", "audio", "65.00", "27.00"),
-    ("AU-SPK-01", "Desktop Speakers", "audio", "119.00", "58.00"),
-    ("CB-USBC-01", "USB-C Cable 2m", "cables", "12.00", "2.40"),
-    ("CB-HDMI-01", "HDMI 2.1 Cable 2m", "cables", "15.00", "3.10"),
-    ("CB-DOCK-01", "USB-C Docking Station", "cables", "149.00", "78.00"),
-    ("CB-HUB-01", "7-port USB Hub", "cables", "35.00", "13.00"),
-    ("DK-MAT-01", "Large Desk Mat", "desk", "29.00", "8.50"),
-    ("DK-LAMP-01", "LED Desk Lamp", "desk", "55.00", "21.00"),
-    ("DK-STD-01", "Laptop Stand", "desk", "39.00", "14.00"),
-    ("DK-RST-01", "Wrist Rest", "desk", "19.00", "5.20"),
-    ("DK-CAM-01", "1080p Webcam", "desk", "69.00", "29.00"),
-]
+# Placeholder price and cost for every product, until the seed content lands.
+PLACEHOLDER_PRICE = "50.00"
+PLACEHOLDER_COST = "20.00"
+# Products whose stock or price a scenario depends on: never repriced.
+SCENARIO_SKUS = {catalogue_data.SPOTLIGHT_SKU, LIMITED_SKU, *LOW_STOCK_SKUS, SOLD_OUT_SKU,
+                 DISCONTINUED_SKU}
+
 
 FIRST_NAMES = [
     "Ava", "Ben", "Chloe", "Dev", "Ella", "Finn", "Grace", "Hari", "Isla", "Jack",
@@ -91,29 +81,34 @@ def money(value) -> Decimal:
 
 # --- catalogue and customers -------------------------------------------------
 
+def build_categories() -> list[dict]:
+    return [
+        {"slug": slug, "title": title, "description": description, "position": position}
+        for position, (slug, title, description) in enumerate(catalogue_data.CATEGORIES, start=1)
+    ]
+
+
 def build_products(rng: random.Random) -> list[dict]:
     products = []
-    for product_id, (sku, name, category, price, cost) in enumerate(CATALOGUE, start=1):
+    for product_id, (sku, slug, name, brand, category) in enumerate(
+        catalogue_data.PRODUCTS, start=1
+    ):
         products.append({
-            "id": product_id, "sku": sku, "name": name, "category": category,
-            "price": money(price), "unit_cost": money(cost), "active": True,
-            "created_at": CATALOGUE_DATE, "price_before_reprice": None,
+            "id": product_id, "sku": sku, "slug": slug, "name": name, "brand": brand,
+            "category": category, "price": money(PLACEHOLDER_PRICE),
+            "unit_cost": money(PLACEHOLDER_COST),
+            # Discontinued: deactivated, never deleted.
+            "active": sku != DISCONTINUED_SKU,
+            "created_at": END - timedelta(days=1) if sku == LIMITED_SKU else CATALOGUE_DATE,
+            "price_before_reprice": None,
         })
 
     # A 10% price rise on a few products from REPRICE_DATE. products.price holds
     # the current price; earlier order items keep the old one.
-    for product in rng.sample(products, N_REPRICED):
+    repriceable = [p for p in products if p["sku"] not in SCENARIO_SKUS]
+    for product in rng.sample(repriceable, N_REPRICED):
         product["price_before_reprice"] = product["price"]
         product["price"] = money(product["price"] * Decimal("1.10"))
-
-    # One discontinued product: still referenced by old orders, so never deleted.
-    rng.choice(products)["active"] = False
-
-    products.append({
-        "id": len(products) + 1, "sku": LIMITED_SKU, "name": "Limited Edition Keyboard",
-        "category": "keyboards", "price": money("199.00"), "unit_cost": money("95.00"),
-        "active": True, "created_at": END - timedelta(days=1), "price_before_reprice": None,
-    })
     return products
 
 
@@ -196,6 +191,7 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
             "order_id": order_id, "product_id": p["id"],
             "quantity": rng.choices([1, 2, 3], weights=[70, 22, 8])[0],
             "unit_price": price_at(p, placed_at), "unit_cost": p["unit_cost"],
+            "product_name": p["name"], "sku": p["sku"],
         } for p in rng.sample(sellable, n_lines)]
         total = money(sum(i["quantity"] * i["unit_price"] for i in items))
         status = pick_status(rng, placed_at)
@@ -203,7 +199,8 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
         data["orders"].append({
             "id": order_id, "customer_id": customer["id"], "status": status, "total": total,
             "idempotency_key": f"seed-{order_id:06d}",
-            "request_hash": request_hash(customer["id"], items), "created_at": placed_at,
+            "request_hash": request_hash(customer["id"], items),
+            "public_token": f"{rng.getrandbits(128):032x}", "created_at": placed_at,
         })
         data["order_items"].extend(items)
 
@@ -256,14 +253,26 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
 
 # --- writing ------------------------------------------------------------------
 
+# Every table, children before their parents.
 ALL_TABLES = ("refunds, payments, stock_movements, reservations, inventory, "
-              "order_items, orders, customers, products")
+              "order_addresses, order_items, orders, customers, "
+              "collection_products, collections, product_images, images, products, categories")
 
 COLUMNS = {
-    "products": ["sku", "name", "category", "price", "unit_cost", "active", "created_at"],
+    "categories": ["slug", "title", "description", "position"],
+    "products": ["sku", "slug", "name", "brand", "category", "price", "unit_cost", "active",
+                 "created_at"],
+    "images": ["sha256", "content_type", "data", "source_url", "licence", "credit"],
+    "product_images": ["product_id", "position", "image_sha256", "alt"],
+    "collections": ["slug", "title", "description", "position"],
+    "collection_products": ["collection_id", "product_id", "position"],
     "customers": ["name", "email", "created_at"],
-    "orders": ["customer_id", "status", "total", "idempotency_key", "request_hash", "created_at"],
-    "order_items": ["order_id", "product_id", "quantity", "unit_price", "unit_cost"],
+    "orders": ["customer_id", "status", "total", "idempotency_key", "request_hash",
+               "public_token", "created_at"],
+    "order_items": ["order_id", "product_id", "quantity", "unit_price", "unit_cost",
+                    "product_name", "sku"],
+    "order_addresses": ["order_id", "name", "phone", "company", "vat_number", "line1", "line2",
+                        "city", "postcode", "country"],
     "inventory": ["product_id", "on_hand", "reserved", "updated_at"],
     "reservations": ["order_id", "product_id", "quantity", "status", "expires_at", "created_at"],
     "stock_movements": ["product_id", "quantity_delta", "reason", "order_id", "created_at"],
@@ -302,6 +311,7 @@ def write(conn: psycopg.Connection, products, customers, data) -> None:
     with conn.cursor() as cur:
         # RESTART IDENTITY makes the ids start at 1 again, matching the plan.
         cur.execute(f"TRUNCATE {ALL_TABLES} RESTART IDENTITY")
+        insert_rows(cur, "categories", data["categories"])
         insert_rows(cur, "products", products)
         insert_rows(cur, "customers", customers)
         for table in ("orders", "order_items", "inventory", "reservations",
@@ -314,7 +324,9 @@ def generate(seed: int) -> tuple[list[dict], list[dict], dict]:
     rng = random.Random(seed)
     products = build_products(rng)
     customers = build_customers(rng)
-    return products, customers, simulate(rng, products, customers)
+    data = simulate(rng, products, customers)
+    data["categories"] = build_categories()
+    return products, customers, data
 
 
 def main(argv: list[str] | None = None) -> None:

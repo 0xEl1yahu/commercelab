@@ -1,0 +1,1627 @@
+{
+  "components": {
+    "schemas": {
+      "AddressIn": {
+        "description": "The delivery address. The recipient's name and phone come from the contact.",
+        "properties": {
+          "city": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "City",
+            "type": "string"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "country": {
+            "const": "GB",
+            "default": "GB",
+            "title": "Country",
+            "type": "string"
+          },
+          "line1": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Line1",
+            "type": "string"
+          },
+          "line2": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line2"
+          },
+          "postcode": {
+            "pattern": "^[A-Za-z0-9 ]{5,8}$",
+            "title": "Postcode",
+            "type": "string"
+          },
+          "vat_number": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Number"
+          }
+        },
+        "required": [
+          "line1",
+          "city",
+          "postcode"
+        ],
+        "title": "AddressIn",
+        "type": "object"
+      },
+      "AddressOut": {
+        "properties": {
+          "city": {
+            "title": "City",
+            "type": "string"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "country": {
+            "const": "GB",
+            "title": "Country",
+            "type": "string"
+          },
+          "line1": {
+            "title": "Line1",
+            "type": "string"
+          },
+          "line2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line2"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "postcode": {
+            "title": "Postcode",
+            "type": "string"
+          },
+          "vat_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Number"
+          }
+        },
+        "required": [
+          "name",
+          "phone",
+          "company",
+          "vat_number",
+          "line1",
+          "line2",
+          "city",
+          "postcode",
+          "country"
+        ],
+        "title": "AddressOut",
+        "type": "object"
+      },
+      "CartLineOut": {
+        "properties": {
+          "limited": {
+            "description": "quantity < requested.",
+            "title": "Limited",
+            "type": "boolean"
+          },
+          "line_total": {
+            "description": "GBP, tax-inclusive. Serialised as a string, e.g. \"97.90\".",
+            "title": "Line Total",
+            "type": "string"
+          },
+          "product": {
+            "$ref": "#/components/schemas/ProductCardOut"
+          },
+          "quantity": {
+            "description": "What can be bought: at most what is available and 100 per line. 0 when sold out.",
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "requested": {
+            "description": "What the cart asked for, repeated ids merged.",
+            "title": "Requested",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "product",
+          "requested",
+          "quantity",
+          "limited",
+          "line_total"
+        ],
+        "title": "CartLineOut",
+        "type": "object"
+      },
+      "CartQuoteOut": {
+        "properties": {
+          "delivery": {
+            "title": "Delivery",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/CartLineOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "removed": {
+            "description": "Product ids that are unknown or no longer sold.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "subtotal": {
+            "title": "Subtotal",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "string"
+          },
+          "vat_included": {
+            "title": "Vat Included",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lines",
+          "removed",
+          "subtotal",
+          "delivery",
+          "total",
+          "vat_included"
+        ],
+        "title": "CartQuoteOut",
+        "type": "object"
+      },
+      "CartQuoteRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteItem"
+            },
+            "maxItems": 200,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "CartQuoteRequest",
+        "type": "object"
+      },
+      "CategoryOut": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description"
+        ],
+        "title": "CategoryOut",
+        "type": "object"
+      },
+      "CheckoutItem": {
+        "properties": {
+          "product_id": {
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "quantity": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 100.0,
+            "title": "Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "product_id",
+          "quantity"
+        ],
+        "title": "CheckoutItem",
+        "type": "object"
+      },
+      "CheckoutRequest": {
+        "description": "No prices and no card details: the server takes prices from the database,\nand the simulated provider takes only an amount.",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/AddressIn"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/ContactIn"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckoutItem"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contact",
+          "address",
+          "items"
+        ],
+        "title": "CheckoutRequest",
+        "type": "object"
+      },
+      "CollectionDetailOut": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCardOut"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "products"
+        ],
+        "title": "CollectionDetailOut",
+        "type": "object"
+      },
+      "CollectionOut": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description"
+        ],
+        "title": "CollectionOut",
+        "type": "object"
+      },
+      "ContactIn": {
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "pattern": "^[0-9 +()-]{7,20}$",
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name",
+          "phone"
+        ],
+        "title": "ContactIn",
+        "type": "object"
+      },
+      "ErrorOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorOut",
+        "type": "object"
+      },
+      "FacetsOut": {
+        "description": "What the filter bar offers for the listed category: never a brand with nothing in it.",
+        "properties": {
+          "brands": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Brands",
+            "type": "array"
+          },
+          "max_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the category has no products.",
+            "title": "Max Price"
+          },
+          "min_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the category has no products.",
+            "title": "Min Price"
+          }
+        },
+        "required": [
+          "brands",
+          "min_price",
+          "max_price"
+        ],
+        "title": "FacetsOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "database": {
+            "enum": [
+              "ok",
+              "unreachable"
+            ],
+            "title": "Database",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "ImageOut": {
+        "properties": {
+          "alt": {
+            "title": "Alt",
+            "type": "string"
+          },
+          "key": {
+            "description": "sha256 of the bytes. The bytes are at GET /images/{key}.",
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "alt"
+        ],
+        "title": "ImageOut",
+        "type": "object"
+      },
+      "InsufficientStockOut": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "integer"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "detail",
+          "product_id",
+          "requested",
+          "available"
+        ],
+        "title": "InsufficientStockOut",
+        "type": "object"
+      },
+      "OrderItemOut": {
+        "properties": {
+          "line_total": {
+            "title": "Line Total",
+            "type": "string"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "description": "As it was when the order was placed.",
+            "title": "Product Name",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "sku": {
+            "description": "As it was when the order was placed.",
+            "title": "Sku",
+            "type": "string"
+          },
+          "unit_price": {
+            "description": "As it was when the order was placed. GBP, tax-inclusive. Serialised as a string, e.g. \"97.90\".",
+            "title": "Unit Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_id",
+          "sku",
+          "product_name",
+          "quantity",
+          "unit_price",
+          "line_total"
+        ],
+        "title": "OrderItemOut",
+        "type": "object"
+      },
+      "OrderOut": {
+        "description": "An order as its customer sees it, reached only by its token.\n\nNo internal id, no customer id and no unit costs.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AddressOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null for orders placed without one."
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "delivery": {
+            "title": "Delivery",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "payment_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "succeeded",
+                  "failed",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Status"
+          },
+          "reference": {
+            "description": "What the customer quotes, e.g. \"CL-01501\".",
+            "title": "Reference",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "paid",
+              "fulfilled",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subtotal": {
+            "title": "Subtotal",
+            "type": "string"
+          },
+          "token": {
+            "description": "The unguessable id in the order's link: GET /orders/{token}.",
+            "title": "Token",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "string"
+          },
+          "vat_included": {
+            "title": "Vat Included",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "token",
+          "status",
+          "payment_status",
+          "created_at",
+          "customer_name",
+          "items",
+          "subtotal",
+          "delivery",
+          "total",
+          "vat_included",
+          "address"
+        ],
+        "title": "OrderOut",
+        "type": "object"
+      },
+      "ProductCardOut": {
+        "description": "A product as listings, collections and the cart show it.\n\nStock is a band, never a count: stock_left is set only for low_stock.",
+        "properties": {
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The primary image, or null if there is none."
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "description": "GBP, tax-inclusive. Serialised as a string, e.g. \"97.90\".",
+            "title": "Price",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "stock_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Units left, only when stock_status is low_stock.",
+            "title": "Stock Left"
+          },
+          "stock_status": {
+            "enum": [
+              "in_stock",
+              "low_stock",
+              "out_of_stock"
+            ],
+            "title": "Stock Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "sku",
+          "name",
+          "brand",
+          "category",
+          "price",
+          "stock_status",
+          "stock_left",
+          "image"
+        ],
+        "title": "ProductCardOut",
+        "type": "object"
+      },
+      "ProductDetailOut": {
+        "description": "A product as its own page shows it.",
+        "properties": {
+          "brand": {
+            "title": "Brand",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "category_title": {
+            "title": "Category Title",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The primary image, or null if there is none."
+          },
+          "images": {
+            "description": "Every image, in gallery order.",
+            "items": {
+              "$ref": "#/components/schemas/ImageOut"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "description": "GBP, tax-inclusive. Serialised as a string, e.g. \"97.90\".",
+            "title": "Price",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "specs": {
+            "items": {
+              "$ref": "#/components/schemas/SpecOut"
+            },
+            "title": "Specs",
+            "type": "array"
+          },
+          "stock_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Units left, only when stock_status is low_stock.",
+            "title": "Stock Left"
+          },
+          "stock_status": {
+            "enum": [
+              "in_stock",
+              "low_stock",
+              "out_of_stock"
+            ],
+            "title": "Stock Status",
+            "type": "string"
+          },
+          "tagline": {
+            "title": "Tagline",
+            "type": "string"
+          },
+          "vat_included": {
+            "description": "The VAT inside price (price \u00f7 6). GBP, tax-inclusive. Serialised as a string, e.g. \"97.90\".",
+            "title": "Vat Included",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "sku",
+          "name",
+          "brand",
+          "category",
+          "price",
+          "stock_status",
+          "stock_left",
+          "image",
+          "category_title",
+          "tagline",
+          "description",
+          "specs",
+          "images",
+          "vat_included"
+        ],
+        "title": "ProductDetailOut",
+        "type": "object"
+      },
+      "ProductPage": {
+        "description": "One page of products. total counts every match, not just this page.",
+        "properties": {
+          "facets": {
+            "$ref": "#/components/schemas/FacetsOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductCardOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "facets"
+        ],
+        "title": "ProductPage",
+        "type": "object"
+      },
+      "QuoteItem": {
+        "properties": {
+          "product_id": {
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "quantity": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000.0,
+            "title": "Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "product_id",
+          "quantity"
+        ],
+        "title": "QuoteItem",
+        "type": "object"
+      },
+      "SpecOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "SpecOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "CommerceLab",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/cart/quote": {
+      "post": {
+        "description": "Price the browser's cart: current prices, clamped quantities, VAT and total.\n\nNever a 422 for a stale or oversized cart: unknown or discontinued ids come\nback in `removed`, and quantities above what can be bought are clamped\n(`limited: true`). Reserves nothing.",
+        "operationId": "quote_cart_quote_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartQuoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Quote",
+        "tags": [
+          "cart"
+        ]
+      }
+    },
+    "/categories": {
+      "get": {
+        "description": "Categories with at least one active product, in nav order.",
+        "operationId": "list_categories_categories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryOut"
+                  },
+                  "title": "Response List Categories Categories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Categories",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    },
+    "/checkout": {
+      "post": {
+        "description": "Place and pay for an order as a guest.\n\nSend the same Idempotency-Key header when retrying (a timeout, a double\nclick): the original order comes back with 200 and the customer is never\ncharged twice. 201 means this request created the order. The order's\nstatus says how payment went: paid, cancelled (declined; a new attempt\nneeds a new key) or pending (outcome unknown; retry with the same key, or\npoll GET /orders/{token}).",
+        "operationId": "checkout_checkout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderOut"
+                }
+              }
+            },
+            "description": "A retry: the original order, unchanged"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientStockOut"
+                }
+              }
+            },
+            "description": "Not enough stock, or key reused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Checkout",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/collections": {
+      "get": {
+        "operationId": "list_collections_collections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CollectionOut"
+                  },
+                  "title": "Response List Collections Collections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Collections",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    },
+    "/collections/{slug}": {
+      "get": {
+        "description": "A collection's active products, in its own order.",
+        "operationId": "get_collection_collections__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Collection",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness plus a database check. 503 if Postgres can't be reached.\n\nUses the pool directly instead of the Conn dependency: if no connection\ncan be borrowed, the dependency itself would fail with a generic 500.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/images/{key}": {
+      "get": {
+        "operationId": "get_image_images__key__get",
+        "parameters": [
+          {
+            "description": "sha256 of the bytes",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "sha256 of the bytes",
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-none-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/png": {},
+              "image/webp": {}
+            },
+            "description": "The image bytes"
+          },
+          "304": {
+            "description": "Not modified: the client's copy (If-None-Match) is current"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/orders/{token}": {
+      "get": {
+        "description": "An order by its unguessable token. There is no route by numeric id.",
+        "operationId": "get_order_orders__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/products": {
+      "get": {
+        "description": "One page of active products, the total match count, and the filter bar's facets.\n\nAn offset past the end is a 200 with no items and the true total.",
+        "operationId": "list_products_products_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "description": "Repeatable: ?brand=Halden&brand=Marlow",
+            "in": "query",
+            "name": "brand",
+            "required": false,
+            "schema": {
+              "description": "Repeatable: ?brand=Halden&brand=Marlow",
+              "items": {
+                "type": "string"
+              },
+              "title": "Brand",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_price",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Price"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_price",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Price"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in_stock",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "In Stock",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "featured",
+              "enum": [
+                "featured",
+                "name",
+                "price_asc",
+                "price_desc"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Products",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    },
+    "/products/by-slug/{slug}": {
+      "get": {
+        "operationId": "get_product_by_slug_products_by_slug__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Product By Slug",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    },
+    "/products/{product_id}": {
+      "get": {
+        "operationId": "get_product_products__product_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductCardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Product",
+        "tags": [
+          "catalogue"
+        ]
+      }
+    }
+  }
+}

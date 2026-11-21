@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from commercelab.api import errors
-from commercelab.api.routes import health, orders, products
+from commercelab.api.routes import cart, collections, health, images, orders, products
 from commercelab.data import db
 
 
@@ -35,5 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="CommerceLab", version="0.1.0", lifespan=lifespan)
 errors.register(app)
-for router in (health.router, products.router, orders.router):
+for router in (
+    health.router, products.router, collections.router, cart.router, orders.router, images.router
+):
     app.include_router(router)

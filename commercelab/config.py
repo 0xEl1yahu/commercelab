@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # scripts/reconcile.py may release it (only once the provider confirms the
     # customer wasn't charged).
     reservation_hold_minutes: int = Field(default=15, gt=0)
+    # Demo only: the share of payments the simulated provider declines. The
+    # storefront's e2e tests set 0, so no test depends on a decline by chance.
+    simulated_decline_percent: int = Field(default=5, ge=0, le=100)
 
 
 settings = Settings()

@@ -8,11 +8,11 @@ import psycopg
 import pytest
 
 from commercelab.data import db
+from tests.support.fakes import insert_product
 
-INSERT_PRODUCT = (
-    "INSERT INTO products (sku, name, category, price, unit_cost) "
-    "VALUES (%s, 'Test', 'test', 1.00, 0.50)"
-)
+
+def insert_test_product(conn, sku: str) -> None:
+    insert_product(conn, sku, "Test", "1.00", "0.50")
 
 
 def product_exists(url: str, sku: str) -> bool:
@@ -45,7 +45,7 @@ def test_pooled_connections_are_autocommit(pool):
 def test_transaction_block_commits_when_it_ends(committed_db):
     with db.connect(committed_db) as conn:
         with conn.transaction():
-            conn.execute(INSERT_PRODUCT, ["COMMITTED"])
+            insert_test_product(conn, "COMMITTED")
             assert not product_exists(committed_db, "COMMITTED")  # not visible yet
         assert product_exists(committed_db, "COMMITTED")  # visible after the block
 
@@ -56,8 +56,8 @@ def test_transaction_block_rolls_back_everything_on_error(committed_db):
         pytest.raises(RuntimeError),
         conn.transaction(),
     ):
-        conn.execute(INSERT_PRODUCT, ["FIRST"])
-        conn.execute(INSERT_PRODUCT, ["SECOND"])
+        insert_test_product(conn, "FIRST")
+        insert_test_product(conn, "SECOND")
         raise RuntimeError("payment provider timed out")
     assert not product_exists(committed_db, "FIRST")
     assert not product_exists(committed_db, "SECOND")
@@ -69,7 +69,7 @@ def test_failed_statement_rolls_back_earlier_statements_in_the_block(committed_d
         pytest.raises(psycopg.errors.CheckViolation),
         conn.transaction(),
     ):
-        conn.execute(INSERT_PRODUCT, ["VALID"])
+        insert_test_product(conn, "VALID")
         conn.execute("UPDATE products SET price = -1 WHERE sku = 'VALID'")
     assert not product_exists(committed_db, "VALID")
 
@@ -77,7 +77,7 @@ def test_failed_statement_rolls_back_earlier_statements_in_the_block(committed_d
 def test_without_a_transaction_block_each_statement_commits_alone(committed_db):
     """Why writes must be wrapped: in autocommit mode, a bare statement is final."""
     with db.connect(committed_db) as conn:
-        conn.execute(INSERT_PRODUCT, ["BARE"])
+        insert_test_product(conn, "BARE")
         with pytest.raises(psycopg.errors.CheckViolation):
             conn.execute("UPDATE products SET price = -1 WHERE sku = 'BARE'")
     assert product_exists(committed_db, "BARE")  # the first statement was not undone
@@ -91,7 +91,7 @@ def test_transaction_inside_the_test_fixture_is_only_a_savepoint(conn, database_
     this block into a real, committed transaction.
     """
     with conn.transaction():
-        conn.execute(INSERT_PRODUCT, ["SAVEPOINT"])
+        insert_test_product(conn, "SAVEPOINT")
     assert not product_exists(
         database_url, "SAVEPOINT"
     )  # still inside the outer transaction

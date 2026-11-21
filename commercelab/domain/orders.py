@@ -37,12 +37,19 @@ from psycopg.rows import dict_row
 
 from commercelab.config import settings
 from commercelab.domain import inventory, payments
+from commercelab.domain.customers import Contact, DeliveryAddress
 
 
 class OrderNotFound(Exception):
-    def __init__(self, order_id: int):
-        super().__init__(f"No order with id {order_id}")
-        self.order_id = order_id
+    """No order has this id (int, internal) or public token (str). The route gives 404."""
+
+    def __init__(self, ref: int | str):
+        if isinstance(ref, int):
+            message = f"No order with id {ref}"
+        else:
+            message = f"No order {ref!r}"
+        super().__init__(message)
+        self.ref = ref
 
 
 class CustomerNotFound(Exception):
@@ -74,6 +81,11 @@ class OrderStateError(Exception):
 class CheckoutResult(NamedTuple):
     order: dict
     created: bool  # False when this was a retry of an earlier checkout
+
+
+def order_reference(order_id: int) -> str:
+    """The reference a customer sees: CL- and the id padded to 5 digits (7 -> "CL-00007")."""
+    return f"CL-{order_id:05d}"
 
 
 # --- request normalisation ----------------------------------------------------------
@@ -116,12 +128,13 @@ def _existing_order(conn: psycopg.Connection, key: str, fingerprint: str) -> int
 
 def _current_prices(
     conn: psycopg.Connection, product_ids: list[int]
-) -> dict[int, tuple[Decimal, Decimal]]:
+) -> dict[int, tuple[Decimal, Decimal, str, str]]:
+    """(price, unit_cost, name, sku) per product: everything an order item snapshots."""
     rows = conn.execute(
-        "SELECT id, price, unit_cost FROM products WHERE id = ANY(%s) AND active",
+        "SELECT id, price, unit_cost, name, sku FROM products WHERE id = ANY(%s) AND active",
         [product_ids],
     ).fetchall()
-    prices = {product_id: (price, cost) for product_id, price, cost in rows}
+    prices = {product_id: (price, cost, name, sku) for product_id, price, cost, name, sku in rows}
     missing = [p for p in product_ids if p not in prices]
     if missing:
         raise ProductUnavailable(missing)
@@ -177,8 +190,9 @@ def place_order(
 
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO order_items "
+                "(order_id, product_id, quantity, unit_price, unit_cost, product_name, sku) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 [(order_id, p, q, *prices[p]) for p, q in lines],
             )
         for product_id, quantity in lines:  # already in product_id order
@@ -349,6 +363,30 @@ def checkout(
     )
     pay_order(conn, provider, order_id)  # resumes an interrupted or unknown payment
     return CheckoutResult(get_order(conn, order_id), created)
+
+
+def guest_checkout(
+    conn: psycopg.Connection,
+    provider: payments.PaymentProvider,
+    *,
+    contact: Contact,
+    address: DeliveryAddress,
+    items: Iterable[tuple[int, int]],
+    idempotency_key: str,
+) -> CheckoutResult:
+    """Checkout without an account: find or create the customer by email, then checkout.
+
+    The order dict has the same shape as get_order_by_token's.
+    """
+    raise NotImplementedError("b-checkout")
+
+
+def get_order_by_token(conn: psycopg.Connection, token: str) -> dict:
+    """An order by its public token, as the customer sees it. Raises OrderNotFound(token).
+
+    The shape is every OrderOut field, plus the internal `id`.
+    """
+    raise NotImplementedError("b-checkout")
 
 
 def get_order(conn: psycopg.Connection, order_id: int) -> dict:

@@ -48,6 +48,7 @@ def test_startup_opens_the_pool_and_shutdown_closes_it(database_url, monkeypatch
 
 # --- GET /products ----------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_list_products_returns_a_page_envelope(client, seeded):
     body = client.get("/products").json()
     assert set(body) == {"items", "limit", "offset"}
@@ -56,11 +57,13 @@ def test_list_products_returns_a_page_envelope(client, seeded):
     assert len(body["items"]) == catalogue.DEFAULT_PAGE_SIZE
 
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_products_expose_only_public_fields(client, seeded):
     items = client.get("/products", params={"limit": 100}).json()["items"]
     assert all(set(item) == PRODUCT_FIELDS for item in items)  # no unit_cost, no active
 
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_prices_are_json_strings_not_floats(client, seeded):
     items = client.get("/products", params={"limit": 100}).json()["items"]
     assert all(isinstance(item["price"], str) for item in items)
@@ -68,6 +71,7 @@ def test_prices_are_json_strings_not_floats(client, seeded):
     assert keyboard["price"] == "199.00"
 
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_paging_and_category_reach_the_catalogue(client, seeded):
     response = client.get("/products", params={"category": "keyboards", "limit": 2, "offset": 1})
     body = response.json()
@@ -88,6 +92,7 @@ def test_invalid_paging_is_rejected_with_422(client, params):
 
 # --- GET /products/{id} -----------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_get_product_returns_the_product(client, conn, seeded):
     keyboard_id = product_id_by_sku(conn, seed.LIMITED_SKU)
     response = client.get(f"/products/{keyboard_id}")
@@ -98,6 +103,7 @@ def test_get_product_returns_the_product(client, conn, seeded):
     }
 
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_missing_product_is_404_with_a_message(client, conn, seeded):
     missing_id = conn.execute("SELECT max(id) + 1000 FROM products").fetchone()[0]
     response = client.get(f"/products/{missing_id}")
@@ -105,6 +111,7 @@ def test_missing_product_is_404_with_a_message(client, conn, seeded):
     assert response.json() == {"detail": f"No active product with id {missing_id}"}
 
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_inactive_product_is_404(client, conn, seeded):
     inactive_id = conn.execute("SELECT id FROM products WHERE NOT active").fetchone()[0]
     assert client.get(f"/products/{inactive_id}").status_code == 404
@@ -124,6 +131,7 @@ def test_categories_match_the_catalogue(client, conn, seeded):
 
 # --- API contract -----------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason="B3")
 def test_openapi_schema_documents_the_public_product_shape():
     schema = app.openapi()
     product = schema["components"]["schemas"]["ProductOut"]

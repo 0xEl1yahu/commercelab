@@ -13,3 +13,6 @@ __pycache__/
 
 # Brainstorming mockups (local only)
 .superpowers/
+
+# Downloaded stock photos (scripts/fetch_images); the bytes are seeded into PostgreSQL
+.cache/

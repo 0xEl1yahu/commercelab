@@ -17,6 +17,7 @@ import pytest
 from commercelab.data import db
 from commercelab.domain import inventory
 from commercelab.domain.inventory import InsufficientStock, ReservationNotActive
+from tests.support.fakes import insert_product
 from tests.support.invariants import STOCK_INVARIANTS, violations
 
 NO_STOCK_VIOLATIONS = {name: 0 for name in STOCK_INVARIANTS}
@@ -25,10 +26,7 @@ NO_STOCK_VIOLATIONS = {name: 0 for name in STOCK_INVARIANTS}
 def make_stock(conn, on_hand: int, n_orders: int = 1) -> tuple[int, list[int]]:
     """One product with `on_hand` units (added via inventory.restock, so the
     movement ledger is consistent), plus `n_orders` pending orders to reserve for."""
-    product_id = conn.execute(
-        "INSERT INTO products (sku, name, category, price, unit_cost) "
-        "VALUES ('KB', 'Keyboard', 'keyboards', 199.00, 95.00) RETURNING id"
-    ).fetchone()[0]
+    product_id = insert_product(conn, "KB", "Keyboard", "199.00", "95.00", category="keyboards")
     inventory.restock(conn, product_id, on_hand)
     customer_id = conn.execute(
         "INSERT INTO customers (name, email) VALUES ('Ann', 'ann@example.com') RETURNING id"
@@ -128,10 +126,7 @@ def test_failure_on_a_later_line_undoes_earlier_lines(conn):
 
 
 def make_stock_for_second_product(conn, on_hand: int) -> tuple[int, None]:
-    product_id = conn.execute(
-        "INSERT INTO products (sku, name, category, price, unit_cost) "
-        "VALUES ('MS', 'Mouse', 'mice', 25.00, 9.00) RETURNING id"
-    ).fetchone()[0]
+    product_id = insert_product(conn, "MS", "Mouse", "25.00", "9.00", category="mice")
     if on_hand:
         inventory.restock(conn, product_id, on_hand)
     else:
