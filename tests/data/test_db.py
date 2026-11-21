@@ -7,7 +7,7 @@ what really gets committed, which a rolled-back test connection cannot show.
 import psycopg
 import pytest
 
-from data import db
+from commercelab.data import db
 
 INSERT_PRODUCT = (
     "INSERT INTO products (sku, name, category, price, unit_cost) "

@@ -3,9 +3,9 @@
 import psycopg
 import pytest
 
-from config import settings
+from commercelab.config import settings
 from scripts import seed
-from tests.invariants import INVARIANTS, violations
+from tests.support.invariants import INVARIANTS, violations
 
 TABLES = [
     "products", "customers", "orders", "order_items", "inventory",
@@ -59,7 +59,7 @@ def test_refuses_to_run_outside_demo(monkeypatch):
 
 
 # --- invariants the schema cannot enforce on its own ---------------------------
-# The rules themselves live in tests/invariants.py, shared with domain tests.
+# The rules themselves live in tests/support/invariants.py, shared with domain tests.
 
 
 @pytest.mark.parametrize("name", INVARIANTS)

@@ -4,8 +4,8 @@ from decimal import Decimal
 
 import pytest
 
-import catalogue
-from catalogue import ProductNotFound
+from commercelab.domain import catalogue
+from commercelab.domain.catalogue import ProductNotFound
 from scripts import seed
 
 

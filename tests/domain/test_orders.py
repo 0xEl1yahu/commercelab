@@ -6,72 +6,17 @@ from decimal import Decimal
 
 import pytest
 
-import inventory
-import orders
-from data import db
-from inventory import InsufficientStock
-from orders import (
+from commercelab.data import db
+from commercelab.domain import inventory, orders
+from commercelab.domain.inventory import InsufficientStock
+from commercelab.domain.orders import (
     CustomerNotFound,
     IdempotencyConflict,
     OrderNotFound,
     ProductUnavailable,
 )
-from payments import Charge
-from tests.invariants import violations
-
-
-def assert_invariants(conn):
-    """Every rule in tests/invariants.py holds: orders, payments and stock agree."""
-    result = violations(conn)
-    assert result == {name: 0 for name in result}
-
-
-class ScriptedProvider:
-    """A payment provider whose behaviour each test chooses.
-
-    Like a real provider, it decides each key's outcome once and repeats it on
-    every retry. While `down`, it raises without charging (a timeout).
-    """
-
-    def __init__(self, outcome: str = "succeeded"):
-        self.outcome = outcome
-        self.down = False
-        self.charged: dict[str, Charge] = {}  # key -> outcome, i.e. real charges
-        self.calls = 0
-        self.lock = threading.Lock()
-        self.on_charge = None  # optional hook, called with the key
-
-    def charge(self, *, idempotency_key: str, amount: Decimal) -> Charge:
-        with self.lock:
-            self.calls += 1
-            if self.down:
-                raise TimeoutError("provider did not respond")
-            if self.on_charge:
-                self.on_charge(idempotency_key)
-            if idempotency_key not in self.charged:
-                self.charged[idempotency_key] = Charge(self.outcome, f"ref-{idempotency_key}")
-            return self.charged[idempotency_key]
-
-
-def make_shop(conn) -> dict:
-    """A customer, a keyboard with 2 in stock and a mouse with 10."""
-
-    def product(sku, name, price, cost, on_hand):
-        product_id = conn.execute(
-            "INSERT INTO products (sku, name, category, price, unit_cost) "
-            "VALUES (%s, %s, 'test', %s, %s) RETURNING id",
-            [sku, name, price, cost],
-        ).fetchone()[0]
-        inventory.restock(conn, product_id, on_hand)
-        return product_id
-
-    return {
-        "customer": conn.execute(
-            "INSERT INTO customers (name, email) VALUES ('Ann', 'ann@example.com') RETURNING id"
-        ).fetchone()[0],
-        "keyboard": product("KB", "Keyboard", "199.00", "95.00", 2),
-        "mouse": product("MS", "Mouse", "25.00", "9.00", 10),
-    }
+from tests.support.fakes import ScriptedProvider, make_shop
+from tests.support.invariants import assert_all_hold as assert_invariants
 
 
 @pytest.fixture

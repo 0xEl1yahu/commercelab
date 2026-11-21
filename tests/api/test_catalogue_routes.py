@@ -5,10 +5,10 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-import catalogue
-from config import settings
-from data import db
-from main import app
+from commercelab.config import settings
+from commercelab.data import db
+from commercelab.domain import catalogue
+from commercelab.main import app
 from scripts import seed
 
 PRODUCT_FIELDS = {"id", "sku", "name", "category", "price", "available"}

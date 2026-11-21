@@ -3,9 +3,10 @@ these check status codes, headers, JSON shape and the provider wiring."""
 
 import pytest
 
-from config import settings
-from main import app, get_payment_provider
-from tests.test_orders import ScriptedProvider, make_shop
+from commercelab.api.dependencies import get_payment_provider
+from commercelab.config import settings
+from commercelab.main import app
+from tests.support.fakes import ScriptedProvider, make_shop
 
 
 @pytest.fixture

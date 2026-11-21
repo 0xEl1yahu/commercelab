@@ -20,6 +20,7 @@ Refunds will live here too; they are not built yet.
 """
 
 import hashlib
+import threading
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, Protocol
@@ -31,10 +32,14 @@ Outcome = Literal["succeeded", "failed"]
 
 @dataclass(frozen=True)
 class Charge:
-    """A definite answer from the provider."""
+    """A definite answer about a payment.
+
+    reference is the provider's id for the charge. It is None only when we
+    settle a payment the provider never received (an abandoned checkout).
+    """
 
     outcome: Outcome
-    reference: str
+    reference: str | None
 
 
 class PaymentProvider(Protocol):
@@ -42,24 +47,44 @@ class PaymentProvider(Protocol):
         """Charge once per key. Raises on transport failure (outcome unknown)."""
         ...
 
+    def lookup(self, *, idempotency_key: str) -> Charge | None:
+        """What happened to this key, WITHOUT charging. None: never charged.
+
+        Reconciliation uses this, never charge(): re-sending charge() for an
+        abandoned checkout would bill the customer long after they left.
+        Raises on transport failure.
+        """
+        ...
+
 
 class SimulatedProvider:
     """Demo provider: no network, no money.
 
-    The outcome is a pure function of the idempotency key, so it is
-    deterministic and idempotent by construction: the same key always gets the
-    same answer, even across restarts. About `decline_percent`% of keys decline.
+    The outcome is a pure function of the idempotency key, so the same key
+    always gets the same answer. About `decline_percent`% of keys decline.
+
+    It remembers which keys it has charged, for lookup(), only in memory. A new
+    instance (another process, a restart) has forgotten them; acceptable for a
+    demo, and the reason main.py shares one instance across requests.
     """
 
     def __init__(self, decline_percent: int = 5):
         if not 0 <= decline_percent <= 100:
             raise ValueError("decline_percent must be between 0 and 100")
         self.decline_percent = decline_percent
+        self._charged: dict[str, Charge] = {}
+        self._lock = threading.Lock()  # requests run in parallel threads
 
     def charge(self, *, idempotency_key: str, amount: Decimal) -> Charge:
         digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
         declined = int(digest[:8], 16) % 100 < self.decline_percent
-        return Charge("failed" if declined else "succeeded", f"sim_{digest[:16]}")
+        result = Charge("failed" if declined else "succeeded", f"sim_{digest[:16]}")
+        with self._lock:
+            return self._charged.setdefault(idempotency_key, result)
+
+    def lookup(self, *, idempotency_key: str) -> Charge | None:
+        with self._lock:
+            return self._charged.get(idempotency_key)
 
 
 # --- the payments table -------------------------------------------------------------
@@ -95,7 +120,7 @@ def mark_unknown(conn: psycopg.Connection, payment_id: int) -> None:
 
 
 def record_outcome(
-    conn: psycopg.Connection, payment_id: int, outcome: Outcome, reference: str
+    conn: psycopg.Connection, payment_id: int, outcome: Outcome, reference: str | None
 ) -> bool:
     """Settle an unsettled payment. Returns False if it was already settled.
 

@@ -1,6 +1,6 @@
 """Deterministic demo data for CommerceLab.
 
-Run from the repo root, after data/db.sql has created the schema:
+Run from the repo root, after commercelab/data/db.sql has created the schema:
 
     uv run python -m scripts.seed            # seed 42
     uv run python -m scripts.seed --seed 7   # a different, equally reproducible dataset
@@ -30,8 +30,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import psycopg
 
-from config import settings
-from data import db
+from commercelab.config import settings
+from commercelab.data import db
 
 PENNY = Decimal("0.01")
 

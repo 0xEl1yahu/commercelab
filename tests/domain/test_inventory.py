@@ -14,10 +14,10 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 import pytest
 
-import inventory
-from data import db
-from inventory import InsufficientStock, ReservationNotActive
-from tests.invariants import STOCK_INVARIANTS, violations
+from commercelab.data import db
+from commercelab.domain import inventory
+from commercelab.domain.inventory import InsufficientStock, ReservationNotActive
+from tests.support.invariants import STOCK_INVARIANTS, violations
 
 NO_STOCK_VIOLATIONS = {name: 0 for name in STOCK_INVARIANTS}
 

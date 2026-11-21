@@ -110,7 +110,10 @@ FROM inventory;
 
 -- One row per order line held against stock. Status moves exactly once:
 -- active -> committed (payment succeeded) or active -> released (failed / cancelled / expired).
--- expires_at NULL means no expiry; the expiry policy is still undecided.
+-- expires_at: checkout sets it (RESERVATION_HOLD_MINUTES). NULL means the hold
+-- never expires (e.g. seeded data). An expired hold still counts against stock
+-- until reconciliation releases it, and is only released once the payment
+-- provider confirms the customer wasn't charged.
 CREATE TABLE reservations (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     order_id    BIGINT NOT NULL REFERENCES orders (id),
@@ -127,6 +130,11 @@ CREATE TABLE reservations (
 );
 
 CREATE INDEX reservations_product_id_idx ON reservations (product_id);
+
+-- Finds holds that have run out, for scripts/reconcile.py. Partial: only
+-- active reservations can expire, and they are a small share of the table.
+CREATE INDEX reservations_active_expiry_idx
+    ON reservations (expires_at) WHERE status = 'active';
 
 
 -- Append-only audit log of every change to on_hand.

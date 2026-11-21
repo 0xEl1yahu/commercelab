@@ -28,14 +28,15 @@ at most once per payment key.
 import hashlib
 import json
 from collections.abc import Iterable
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import psycopg
 from psycopg.rows import dict_row
 
-import inventory
-import payments
+from commercelab.config import settings
+from commercelab.domain import inventory, payments
 
 
 class OrderNotFound(Exception):
@@ -140,9 +141,12 @@ def place_order(
     nothing is written. Raises InsufficientStock (and creates nothing) if any
     line can't be reserved; the key stays unused, so the same checkout can be
     retried later.
+
+    The stock is held for settings.reservation_hold_minutes; see reconcile().
     """
     lines = normalise_items(items)
     fingerprint = request_hash(customer_id, lines)
+    hold = timedelta(minutes=settings.reservation_hold_minutes)
 
     with conn.transaction():
         # Fast path for retries. Checked before validation, so a retry still
@@ -178,7 +182,7 @@ def place_order(
                 [(order_id, p, q, *prices[p]) for p, q in lines],
             )
         for product_id, quantity in lines:  # already in product_id order
-            inventory.reserve(conn, order_id, product_id, quantity)
+            inventory.reserve(conn, order_id, product_id, quantity, hold=hold)
         payments.create_pending(conn, order_id, total)
 
     return order_id, True
@@ -197,10 +201,11 @@ def _transition(conn: psycopg.Connection, order_id: int, from_status: str, to_st
 
 def _settle(
     conn: psycopg.Connection, order_id: int, payment_id: int, charge: payments.Charge
-) -> None:
+) -> bool:
+    """Record the payment outcome and settle the stock. False if already settled."""
     with conn.transaction():
         if not payments.record_outcome(conn, payment_id, charge.outcome, charge.reference):
-            return  # a concurrent retry settled it first; nothing left to do
+            return False  # a concurrent retry settled it first; nothing left to do
         reservation_ids = [row[0] for row in conn.execute(
             "SELECT id FROM reservations WHERE order_id = %s AND status = 'active' "
             "ORDER BY product_id",
@@ -214,6 +219,7 @@ def _settle(
             _transition(conn, order_id, "pending", "cancelled")
             for reservation_id in reservation_ids:
                 inventory.release(conn, reservation_id)
+    return True
 
 
 def pay_order(conn: psycopg.Connection, provider: payments.PaymentProvider, order_id: int) -> None:
@@ -233,6 +239,98 @@ def pay_order(conn: psycopg.Connection, provider: payments.PaymentProvider, orde
         payments.mark_unknown(conn, payment_id)
         return
     _settle(conn, order_id, payment_id, charge)
+
+
+# --- reconciliation: orders left pending ---------------------------------------------
+#
+# An order stays pending when its payment outcome is unknown (the provider
+# timed out) or was never requested (a crash after step 1), and the customer
+# didn't retry. Its stock stays held. reconcile() is the job that resolves them.
+#
+# It asks the provider with lookup(), never charge(): charging an abandoned
+# cart would bill a customer who has gone. Then:
+#   provider has a definite answer -> settle accordingly (even after the hold
+#                                     expired: if they paid, they get the order)
+#   provider never saw the payment -> cancel and release, once the hold expires
+#   provider unreachable           -> leave it; try again next run. Releasing
+#                                     stock the customer may have paid for is
+#                                     worse than holding it a little longer.
+#
+# Known gap: if a customer retry is charging at the same moment reconcile
+# cancels the order, the charge can land on a cancelled order. Both settle
+# through record_outcome, so the database stays consistent, but the money would
+# need a refund, which isn't built yet.
+
+ReconcileResult = Literal["paid", "cancelled", "unchanged"]
+
+
+class ReconcileCandidate(NamedTuple):
+    order_id: int
+    payment_id: int
+    payment_status: str
+    hold_expired: bool
+
+
+def reconcile_candidates(
+    conn: psycopg.Connection, *, as_of: datetime | None = None
+) -> list[ReconcileCandidate]:
+    """Pending orders worth asking the provider about.
+
+    Those whose payment outcome is unknown, and those whose hold has expired.
+    as_of defaults to the database's now(); tests pass a later time instead of
+    waiting for real minutes to pass.
+    """
+    rows = conn.execute(
+        """
+        SELECT o.id, p.id, p.status,
+               EXISTS (SELECT 1 FROM reservations r
+                       WHERE r.order_id = o.id AND r.status = 'active'
+                         AND r.expires_at <= coalesce(%(as_of)s, now())) AS hold_expired
+        FROM orders o
+        JOIN payments p ON p.order_id = o.id AND p.status IN ('pending', 'unknown')
+        WHERE o.status = 'pending'
+        ORDER BY o.id
+        """,
+        {"as_of": as_of},
+    ).fetchall()
+    return [
+        ReconcileCandidate(*row) for row in rows if row[2] == "unknown" or row[3]
+    ]
+
+
+def reconcile(
+    conn: psycopg.Connection,
+    provider: payments.PaymentProvider,
+    *,
+    as_of: datetime | None = None,
+) -> dict[int, ReconcileResult]:
+    """Resolve pending orders. Returns what happened to each candidate, by order id.
+
+    Safe to run repeatedly and concurrently with itself and with checkouts:
+    every settlement goes through the status-checked UPDATE in record_outcome.
+    """
+    results: dict[int, ReconcileResult] = {}
+    for candidate in reconcile_candidates(conn, as_of=as_of):
+        key = payments.idempotency_key(candidate.payment_id)
+        try:
+            charge = provider.lookup(idempotency_key=key)
+        # Deliberately broad, as in pay_order: no answer means no decision.
+        except Exception:  # noqa: BLE001
+            results[candidate.order_id] = "unchanged"
+            continue
+
+        if charge is None and not candidate.hold_expired:
+            results[candidate.order_id] = "unchanged"  # still inside the hold
+            continue
+        if charge is None:
+            charge = payments.Charge("failed", None)  # never charged; hold is over
+
+        settled = _settle(conn, candidate.order_id, candidate.payment_id, charge)
+        if not settled:
+            results[candidate.order_id] = "unchanged"  # someone else settled it
+        else:
+            results[candidate.order_id] = "paid" if charge.outcome == "succeeded" else "cancelled"
+    return results
 
 
 # --- checkout and reads -------------------------------------------------------------

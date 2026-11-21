@@ -14,6 +14,8 @@ in product_id order. Two checkouts that lock the same rows in opposite orders
 can deadlock; a consistent order prevents it.
 """
 
+from datetime import timedelta
+
 import psycopg
 
 
@@ -49,8 +51,20 @@ def _available(conn: psycopg.Connection, product_id: int) -> int:
     return row[0] if row else 0
 
 
-def reserve(conn: psycopg.Connection, order_id: int, product_id: int, quantity: int) -> int:
+def reserve(
+    conn: psycopg.Connection,
+    order_id: int,
+    product_id: int,
+    quantity: int,
+    *,
+    hold: timedelta | None = None,
+) -> int:
     """Hold `quantity` units for an order. Returns the reservation id.
+
+    `hold` sets when the reservation expires, measured from the database's
+    clock (now() + hold), so every process agrees on the time. None means it
+    never expires. Expiry doesn't release anything by itself: see
+    orders.reconcile.
 
     Raises InsufficientStock if fewer than `quantity` units are available.
     """
@@ -71,10 +85,11 @@ def reserve(conn: psycopg.Connection, order_id: int, product_id: int, quantity: 
             # Read after the refusal, for the error message only: by the time
             # the caller sees it, this number may already have changed.
             raise InsufficientStock(product_id, quantity, _available(conn, product_id))
+        # now() + NULL is NULL, so hold=None stores "never expires".
         return conn.execute(
-            "INSERT INTO reservations (order_id, product_id, quantity) "
-            "VALUES (%s, %s, %s) RETURNING id",
-            [order_id, product_id, quantity],
+            "INSERT INTO reservations (order_id, product_id, quantity, expires_at) "
+            "VALUES (%s, %s, %s, now() + %s::interval) RETURNING id",
+            [order_id, product_id, quantity, hold],
         ).fetchone()[0]
 
 

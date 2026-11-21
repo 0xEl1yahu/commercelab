@@ -57,3 +57,9 @@ STOCK_INVARIANTS = (
 def violations(conn: psycopg.Connection, names=None) -> dict[str, int]:
     """Violation count per rule. Compare against {name: 0 ...} for a readable diff."""
     return {name: conn.execute(INVARIANTS[name]).fetchone()[0] for name in names or INVARIANTS}
+
+
+def assert_all_hold(conn: psycopg.Connection) -> None:
+    """Every rule holds: orders, payments and stock agree with each other."""
+    result = violations(conn)
+    assert result == {name: 0 for name in result}

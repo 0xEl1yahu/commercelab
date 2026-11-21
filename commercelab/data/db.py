@@ -34,7 +34,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from config import settings
+from commercelab.config import settings
 
 # Fail fast at startup if Postgres is unreachable, rather than on the first request.
 POOL_OPEN_TIMEOUT_SECONDS = 5.0

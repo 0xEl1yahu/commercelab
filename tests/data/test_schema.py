@@ -1,4 +1,4 @@
-"""Tests for data/db.sql: every constraint rejects what it should, and only that.
+"""Tests for commercelab/data/db.sql: every constraint rejects what it should, and only that.
 
 Each rejected case names the constraint expected to fire. Checking only that
 "an error happened" is not enough: a row can fail for an unrelated reason

@@ -1,7 +1,7 @@
 """Shared pytest fixtures.
 
 Tests run against a separate database, commercelab_test by default (override
-with TEST_DATABASE_URL). It is created if missing and rebuilt from data/db.sql
+with TEST_DATABASE_URL). It is created if missing and rebuilt from commercelab/data/db.sql
 once per pytest run.
 
 Each test that asks for `conn` gets a connection inside an open transaction
@@ -20,7 +20,7 @@ from psycopg import conninfo, sql
 
 from scripts import seed
 
-SCHEMA_FILE = Path(__file__).resolve().parent.parent / "data" / "db.sql"
+SCHEMA_FILE = Path(__file__).resolve().parent.parent / "commercelab" / "data" / "db.sql"
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://localhost/commercelab_test"
 )
@@ -108,8 +108,8 @@ def client(conn):
     """
     from fastapi.testclient import TestClient
 
-    from data import db
-    from main import app
+    from commercelab.data import db
+    from commercelab.main import app
 
     app.dependency_overrides[db.get_conn] = lambda: conn
     try:
@@ -121,7 +121,7 @@ def client(conn):
 @pytest.fixture
 def pool(committed_db: str):
     """The app's connection pool, opened against the test database."""
-    from data import db
+    from commercelab.data import db
 
     opened = db.open_pool(committed_db)
     try:
