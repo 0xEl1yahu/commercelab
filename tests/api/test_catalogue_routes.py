@@ -114,6 +114,14 @@ def test_offset_past_the_end_is_200_with_true_total(client, conn):
     assert response.json()["total"] == 6
 
 
+def test_huge_offset_is_200_with_true_total(client, conn):
+    make_catalogue(conn)
+    response = client.get("/products", params={"offset": 10**30})
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["total"] == 6
+
+
 def test_no_available_field_in_listing(client, conn):
     make_catalogue(conn)
     items = client.get("/products", params={"limit": 100}).json()["items"]

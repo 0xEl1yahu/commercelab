@@ -227,9 +227,16 @@ def test_unknown_sort_raises(conn):
 @pytest.mark.parametrize("page_size", [1, 2, 4, 100])
 def test_paging_returns_every_product_exactly_once(conn, page_size):
     make_catalogue(conn)
+    # Four products identical in name, price, stock and created_at (all "now"):
+    # only the id tie-break keeps their order stable from page to page.
+    for sku in ("TWIN-1", "TWIN-2", "TWIN-3", "TWIN-4"):
+        insert_product(conn, sku, "Twin", "75.00", "30.00", category="keyboards")
     for sort in ("featured", "name", "price_asc", "price_desc"):
-        ids = [p["id"] for p in all_pages(conn, page_size, sort=sort)]
-        assert len(ids) == len(set(ids)) == 6
+        unpaged = catalogue.list_products(conn, sort=sort, limit=catalogue.MAX_PAGE_SIZE)["items"]
+        paged = all_pages(conn, page_size, sort=sort)
+        assert paged == unpaged
+        ids = [p["id"] for p in paged]
+        assert len(ids) == len(set(ids)) == 10
 
 
 def test_total_counts_all_matches_not_the_page(conn):
@@ -245,6 +252,15 @@ def test_offset_past_the_end_is_empty_with_true_total(conn):
     assert listing == {"items": [], "total": 6}
     filtered = catalogue.list_products(conn, brands=["Halden"], offset=50)
     assert filtered == {"items": [], "total": 2}
+
+
+def test_huge_offset_is_past_the_end(conn):
+    make_catalogue(conn)
+    listing = catalogue.list_products(conn, offset=10**30)
+    assert listing == {"items": [], "total": 6}
+    assert catalogue.list_products(conn, brands=["Halden"], offset=2**63) == {
+        "items": [], "total": 2,
+    }
 
 
 @pytest.mark.parametrize(
@@ -345,13 +361,12 @@ def test_facets_are_empty_for_an_unknown_category(conn):
     }
 
 
-def test_facet_brands_are_sorted_code_point_wise(conn):
+def test_facet_brands_are_sorted_alphabetically_ignoring_case(conn):
     make_catalogue(conn)
     for sku, brand in [("A1", "aster"), ("A2", "Zeta"), ("A3", "Orrin")]:
         insert_product(conn, sku, sku, "10.00", "4.00", category="mice", brand=brand)
     brands = catalogue.listing_facets(conn, category="mice")["brands"]
-    assert brands == sorted(brands)
-    assert brands == ["Kestrel", "Orrin", "Zeta", "aster"]
+    assert brands == ["aster", "Kestrel", "Orrin", "Zeta"]
 
 
 # --- product detail -------------------------------------------------------------

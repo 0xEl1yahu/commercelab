@@ -196,9 +196,10 @@ def list_categories(conn: psycopg.Connection) -> list[Category]:
 
 # --- products ---------------------------------------------------------------------
 
-# Every sort ends in the id, and names compare as lower(name) COLLATE "C", so the
+# Every sort ends in the id, and names compare as lower(name COLLATE "C"), so the
 # order never depends on the database's locale and paging never repeats or skips.
-_NAME_ORDER = 'lower(q.name) COLLATE "C", q.id'
+_NAME_ORDER = 'lower(q.name COLLATE "C"), q.id'
+_MAX_OFFSET = 2**63 - 1  # PostgreSQL bigint
 _ORDER_BY = {
     # In stock first, newest first, then the name order.
     "featured": f"(q.available = 0), q.created_at DESC, {_NAME_ORDER}",
@@ -252,6 +253,10 @@ def list_products(
         query += " AND coalesce(a.available, 0) > 0"
 
     with conn.cursor(row_factory=dict_row) as cur:
+        if offset > _MAX_OFFSET:
+            # Beyond what OFFSET accepts (a bigint): certainly past the end.
+            cur.execute(f"SELECT count(*) AS total FROM ({query}) q", params)
+            return {"items": [], "total": cur.fetchone()["total"]}
         cur.execute(
             f"SELECT q.*, count(*) OVER () AS total FROM ({query}) q "
             f"ORDER BY {_ORDER_BY[sort]} LIMIT %s OFFSET %s",
@@ -283,9 +288,10 @@ def listing_facets(conn: psycopg.Connection, *, category: str | None) -> Facets:
             params,
         )
         row = cur.fetchone()
-    # Sorted here, not in SQL: Python compares code points, like COLLATE "C".
+    # Sorted here, not in SQL, so the order never depends on the database's locale:
+    # case-insensitive, with the exact spelling as the tie-break.
     return {
-        "brands": sorted(row["brands"]),
+        "brands": sorted(row["brands"], key=lambda brand: (brand.lower(), brand)),
         "min_price": row["min_price"],
         "max_price": row["max_price"],
     }
