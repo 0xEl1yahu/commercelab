@@ -5,6 +5,7 @@ import pytest
 
 from config import settings
 from scripts import seed
+from tests.invariants import INVARIANTS, violations
 
 TABLES = [
     "products", "customers", "orders", "order_items", "inventory",
@@ -58,52 +59,23 @@ def test_refuses_to_run_outside_demo(monkeypatch):
 
 
 # --- invariants the schema cannot enforce on its own ---------------------------
-# Each query counts violating rows, so every one must return 0.
+# The rules themselves live in tests/invariants.py, shared with domain tests.
 
-INVARIANTS = {
-    "order total equals sum of its items": """
-        SELECT count(*) FROM orders o
-        WHERE o.total <> (SELECT sum(quantity * unit_price)
-                          FROM order_items i WHERE i.order_id = o.id)
-    """,
-    "on_hand equals sum of stock movements": """
-        SELECT count(*) FROM inventory v
-        WHERE v.on_hand <> (SELECT sum(quantity_delta)
-                            FROM stock_movements m WHERE m.product_id = v.product_id)
-    """,
-    "reserved equals sum of active reservations": """
-        SELECT count(*) FROM inventory v
-        WHERE v.reserved <> (SELECT coalesce(sum(quantity), 0) FROM reservations r
-                             WHERE r.product_id = v.product_id AND r.status = 'active')
-    """,
-    "refunds never exceed the payment": """
-        SELECT count(*) FROM payments p
-        WHERE (SELECT coalesce(sum(amount), 0) FROM refunds r WHERE r.payment_id = p.id)
-              > p.amount
-    """,
-    "paid and fulfilled orders have exactly one successful payment": """
-        SELECT count(*) FROM orders o
-        WHERE o.status IN ('paid', 'fulfilled')
-          AND (SELECT count(*) FROM payments p
-               WHERE p.order_id = o.id AND p.status = 'succeeded') <> 1
-    """,
-    "pending and cancelled orders have not deducted stock": """
-        SELECT count(*) FROM orders o
-        WHERE o.status IN ('pending', 'cancelled')
-          AND EXISTS (SELECT 1 FROM stock_movements m WHERE m.order_id = o.id)
-    """,
-    "items ordered after the reprice use the current price": """
+
+@pytest.mark.parametrize("name", INVARIANTS)
+def test_seeded_data_satisfies_invariant(conn, seeded, name):
+    assert violations(conn, [name]) == {name: 0}
+
+
+def test_items_ordered_after_the_reprice_use_the_current_price(conn, seeded):
+    """Seed-specific: the seed reprices products on seed.REPRICE_DATE."""
+    stale = conn.execute("""
         SELECT count(*) FROM order_items i
         JOIN orders o ON o.id = i.order_id
         JOIN products p ON p.id = i.product_id
-        WHERE o.created_at >= '2026-07-01' AND i.unit_price <> p.price
-    """,
-}
-
-
-@pytest.mark.parametrize("query", INVARIANTS.values(), ids=INVARIANTS.keys())
-def test_seeded_data_satisfies_invariant(conn, seeded, query):
-    assert conn.execute(query).fetchone()[0] == 0
+        WHERE o.created_at >= %s AND i.unit_price <> p.price
+    """, [seed.REPRICE_DATE]).fetchone()[0]
+    assert stale == 0
 
 
 # --- scenario data other tests and exercises rely on ---------------------------

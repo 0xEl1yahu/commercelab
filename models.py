@@ -8,6 +8,7 @@ Money is Decimal and serialises to a JSON *string* ("97.90"), never a float,
 so the frontend must treat prices as strings or decimals, not numbers.
 """
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -31,6 +32,45 @@ class ProductPage(BaseModel):
     items: list[ProductOut]
     limit: int
     offset: int
+
+
+class CheckoutItem(BaseModel):
+    product_id: int
+    quantity: int = Field(gt=0, le=100)
+
+
+class CheckoutRequest(BaseModel):
+    """No prices: the server takes them from the database, never from the client.
+
+    customer_id is trusted as sent because there is no authentication yet
+    (deferred to Phase 5). Once there is, it must come from the session.
+    """
+
+    customer_id: int
+    items: list[CheckoutItem] = Field(min_length=1, max_length=50)
+
+
+class OrderItemOut(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: Decimal
+
+
+class OrderOut(BaseModel):
+    id: int
+    customer_id: int
+    status: Literal["pending", "paid", "fulfilled", "cancelled"]
+    payment_status: Literal["pending", "succeeded", "failed", "unknown"] | None
+    total: Decimal
+    created_at: datetime
+    items: list[OrderItemOut]
+
+
+class InsufficientStockOut(BaseModel):
+    detail: str
+    product_id: int
+    requested: int
+    available: int
 
 
 class Health(BaseModel):

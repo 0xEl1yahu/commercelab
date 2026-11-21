@@ -18,12 +18,24 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 import catalogue
+import inventory
+import orders
+import payments
+from config import settings
 from data import db
-from models import ErrorOut, Health, ProductOut, ProductPage
+from models import (
+    CheckoutRequest,
+    ErrorOut,
+    Health,
+    InsufficientStockOut,
+    OrderOut,
+    ProductOut,
+    ProductPage,
+)
 
 
 @asynccontextmanager
@@ -38,13 +50,51 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="CommerceLab", version="0.1.0", lifespan=lifespan)
 
+def get_payment_provider() -> payments.PaymentProvider:
+    """The payment provider for this environment. Tests override this dependency.
+
+    Principle 9 (demo/live separation): the simulated provider only exists in
+    demo. There is no live provider yet, so live checkout refuses to run.
+    """
+    if settings.app_env != "demo":
+        raise HTTPException(status_code=503, detail="No live payment provider is configured")
+    return payments.SimulatedProvider()
+
+
 # A route parameter of this type receives one pooled connection per request.
 Conn = Annotated[psycopg.Connection, Depends(db.get_conn)]
+Provider = Annotated[payments.PaymentProvider, Depends(get_payment_provider)]
 
 
-@app.exception_handler(catalogue.ProductNotFound)
-def product_not_found(request: Request, exc: catalogue.ProductNotFound) -> JSONResponse:
-    return JSONResponse(status_code=404, content={"detail": str(exc)})
+# --- domain exceptions -> HTTP --------------------------------------------------------
+# 404: the thing in the URL doesn't exist. 409: the request conflicts with the
+# current state (stock, an earlier request). 422: the body refers to something invalid.
+
+_STATUS_FOR = {
+    catalogue.ProductNotFound: 404,
+    orders.OrderNotFound: 404,
+    orders.IdempotencyConflict: 409,
+    orders.ProductUnavailable: 422,
+    orders.CustomerNotFound: 422,
+}
+
+
+def _as_json_error(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=_STATUS_FOR[type(exc)], content={"detail": str(exc)})
+
+
+for _exception_type in _STATUS_FOR:
+    app.add_exception_handler(_exception_type, _as_json_error)
+
+
+@app.exception_handler(inventory.InsufficientStock)
+def insufficient_stock(request: Request, exc: inventory.InsufficientStock) -> JSONResponse:
+    # Structured, so the storefront can say "only 2 left" without parsing text.
+    body = InsufficientStockOut(
+        detail=str(exc), product_id=exc.product_id,
+        requested=exc.requested, available=exc.available,
+    )
+    return JSONResponse(status_code=409, content=body.model_dump())
 
 
 @app.get("/health")
@@ -84,3 +134,44 @@ def get_product(conn: Conn, product_id: int) -> ProductOut:
 @app.get("/categories")
 def list_categories(conn: Conn) -> list[str]:
     return catalogue.list_categories(conn)
+
+
+@app.post(
+    "/checkout",
+    status_code=201,
+    responses={
+        200: {"model": OrderOut, "description": "A retry: the original order, unchanged"},
+        409: {"model": InsufficientStockOut, "description": "Not enough stock, or key reused"},
+        422: {"model": ErrorOut},
+    },
+)
+def checkout(
+    conn: Conn,
+    provider: Provider,
+    body: CheckoutRequest,
+    response: Response,
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=255)],
+) -> OrderOut:
+    """Place and pay for an order.
+
+    Send the same Idempotency-Key header when retrying (a timeout, a double
+    click): the original order comes back with 200 and the customer is never
+    charged twice. 201 means this request created the order. The order's
+    status says how payment went: paid, cancelled (declined) or pending
+    (outcome unknown; retry with the same key, or poll GET /orders/{id}).
+    """
+    result = orders.checkout(
+        conn,
+        provider,
+        customer_id=body.customer_id,
+        items=[(item.product_id, item.quantity) for item in body.items],
+        idempotency_key=idempotency_key,
+    )
+    if not result.created:
+        response.status_code = 200
+    return OrderOut(**result.order)
+
+
+@app.get("/orders/{order_id}", responses={404: {"model": ErrorOut}})
+def get_order(conn: Conn, order_id: int) -> OrderOut:
+    return OrderOut(**orders.get_order(conn, order_id))
