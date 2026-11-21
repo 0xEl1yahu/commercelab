@@ -4,7 +4,7 @@ Shared by the seed (scripts/seed.py), the image curation (scripts/image_manifest
 and the storefront's e2e tests, which look products up by the scenario skus
 below. Prices, copy and specs live with the seed content, not here.
 
-The brands are invented. Product names never repeat the brand ("K2 Low
+The brands are invented. Product names never repeat the brand ("Quill Low
 Profile Wireless Keyboard" by Halden), and each slug is "<brand>-<name>",
 slugified.
 
@@ -23,7 +23,7 @@ CATEGORIES: list[tuple[str, str, str]] = [
 ]
 
 # Scenario products that tests and the storefront depend on.
-SPOTLIGHT_SKU = "HD-K2-GRY"  # the home page hero
+SPOTLIGHT_SKU = "HD-QUILL-GRY"  # the home page hero
 LIMITED_SKU = "OR-H1-BLK"  # exactly 2 in stock
 LOW_STOCK_SKUS = ("KS-ARC-WHT", "LM-ARC-LAMP")  # "Only N left"
 SOLD_OUT_SKU = "MR-SLIM2-WHT"  # nothing on hand
@@ -32,8 +32,8 @@ DISCONTINUED_SKU = "MR-BUD1-BLK"  # inactive; outside the 9 per category
 # (sku, slug, name, brand, category)
 PRODUCTS: list[tuple[str, str, str, str, str]] = [
     # keyboards: Halden, Marlow, Tessel
-    ("HD-K2-GRY", "halden-k2-low-profile-wireless-keyboard",
-     "K2 Low Profile Wireless Keyboard", "Halden", "keyboards"),
+    ("HD-QUILL-GRY", "halden-quill-low-profile-wireless-keyboard",
+     "Quill Low Profile Wireless Keyboard", "Halden", "keyboards"),
     ("HD-K4-GRY", "halden-k4-full-size-low-profile-keyboard",
      "K4 Full Size Low Profile Keyboard", "Halden", "keyboards"),
     ("HD-S1-BLK", "halden-s1-split-ergonomic-keyboard",

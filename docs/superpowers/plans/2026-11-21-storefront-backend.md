@@ -99,13 +99,13 @@ Leaves the suite green, and fixes every name, shape and route the other tasks an
   - `desk`, "Desk", "Lamps, stands, mats and webcams."
   - `cables`, "Cables & docks", "Docks, hubs and the cables between them."
 - `PRODUCTS: list[tuple[str, str, str, str, str]]`: (sku, slug, name, brand, category). There are 55 rows: 9 active per category, plus `DISCONTINUED_SKU`, with brands as in Global Constraints.
-  - Names follow `"K2 Low Profile Wireless Keyboard"` and never repeat the brand.
-  - Slugs are `"<brand>-<name>"`, slugified, for example `halden-k2-low-profile-wireless-keyboard`.
+  - Names follow `"Quill Low Profile Wireless Keyboard"` and never repeat the brand.
+  - Slugs are `"<brand>-<name>"`, slugified, for example `halden-quill-low-profile-wireless-keyboard`.
 - Scenario constants:
 
   | Constant | Value | Product |
   |---|---|---|
-  | `SPOTLIGHT_SKU` | `"HD-K2-GRY"` | Halden "K2 Low Profile Wireless Keyboard" |
+  | `SPOTLIGHT_SKU` | `"HD-QUILL-GRY"` | Halden "Quill Low Profile Wireless Keyboard" |
   | `LIMITED_SKU` | `"OR-H1-BLK"` | Orrin "H1 Wireless Headset" |
   | `LOW_STOCK_SKUS` | `("KS-ARC-WHT", "LM-ARC-LAMP")` | — |
   | `SOLD_OUT_SKU` | `"MR-SLIM2-WHT"` | Marlow "Slim 2 Wireless Keyboard" |
@@ -349,13 +349,13 @@ Leaves the suite green, and fixes every name, shape and route the other tasks an
     - `"product_images"`: `{product_id, position, image_sha256, alt}`, from the manifest. Products with no manifest entry get no rows.
     - `"images"`: `{sha256, content_type, source_url, licence, credit}`, with no bytes, because `generate` stays pure
 
-    Order rows gain `public_token = f"{rng.getrandbits(128):032x}"`.
+    Order rows gain `public_token = f"{rng.getrandbits(128):032x}"`. *(Already done in B0, which needed it to keep seeding deterministic.)*
   - `seed.write(conn, products, customers, data, *, image_bytes: Callable[[str], bytes] | None = None)`:
     - With `image_bytes=None`, each image gets placeholder bytes `b"placeholder:" + manifest_sha256.encode()`, and its key is recomputed as the sha256 of those bytes. `product_images` points at the recomputed key. Tests use this mode.
     - Otherwise it calls `image_bytes(sha)`, and the key stays the manifest's.
   - `seed.main` passes `image_manifest.cached_bytes`.
   - `LOW_STOCK_SKUS` get opening stock 4 and 5. `SOLD_OUT_SKU` gets no restock movement. Neither is ordered by the simulation, nor is `LIMITED_SKU`.
-  - Repricing never picks a scenario sku.
+  - Repricing never picks a scenario sku. *(Already done in B0, through `SCENARIO_SKUS`.)*
 
 - [ ] **Step 1: Write the failing tests** in `test_seed.py`. Extend `TABLES` with the new tables.
   - `test_54_active_products_9_per_category_plus_one_discontinued`
@@ -442,7 +442,7 @@ Leaves the suite green, and fixes every name, shape and route the other tasks an
   - `test_price_filter_is_inclusive_at_both_ends`
   - `test_in_stock_only_hides_sold_out`
   - `test_featured_puts_sold_out_last_then_newest_first`
-  - `test_price_sorts_break_ties_by_name`
+  - `test_price_sorts_break_ties_by_name`: no two `make_catalogue` products share a price, so add one with `insert_product` inside the test
   - `test_total_counts_all_matches_not_the_page`
   - `test_offset_past_the_end_is_empty_with_true_total`
   - `test_min_above_max_raises`

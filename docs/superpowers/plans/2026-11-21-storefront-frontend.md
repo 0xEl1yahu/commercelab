@@ -67,7 +67,7 @@
 Everything the parallel streams import. The files are added to `docs/superpowers/plans/frozen-paths.txt` under `[frozen]`, except `components/cart/bag-drawer.tsx`, which goes under a `[stubs]` section owned by F3.
 
 **Files:**
-- Create: `frontend/`, via `npx create-next-app@16.4.6 frontend --ts --tailwind --app --eslint --no-src-dir --import-alias "@/*" --use-npm`, then `npx shadcn@4.23.0 init` and `npx shadcn@4.23.0 add button input label popover switch slider dropdown-menu sheet checkbox`
+- Create: `frontend/`. The sandbox mounts a `node_modules` volume at `frontend/node_modules`, so `create-next-app` refuses to scaffold in place. Inside the container, scaffold in a temp directory with `npx create-next-app@16.4.6 /tmp/frontend --ts --tailwind --app --eslint --no-src-dir --import-alias "@/*" --use-npm --skip-install`, copy everything except `node_modules` and the scaffold's `README.md` into `/work/frontend`, run `npm install` there. Keep the scaffold's `AGENTS.md` as `frontend/AGENTS.md`: it points agents at the Next.js 16 docs bundled in `node_modules`, and the root `AGENTS.md` still applies. Then run `npx shadcn@4.23.0 init` and `npx shadcn@4.23.0 add button input label popover switch slider dropdown-menu sheet checkbox`
 - Create: `frontend/app/globals.css`, `frontend/app/layout.tsx`, `frontend/next.config.ts`, `frontend/.env.example` (`API_URL=http://127.0.0.1:8000`)
 - Create: `frontend/lib/api.ts`, `frontend/lib/api-types.ts` (generated), `frontend/lib/types.ts`, `frontend/lib/money.ts`, `frontend/lib/cart.ts`
 - Create: `frontend/components/shell/site-header.tsx`, `frontend/components/shell/site-footer.tsx`
@@ -163,11 +163,11 @@ Everything the parallel streams import. The files are added to `docs/superpowers
   - `resetDatabase()` runs `uv run python -m scripts.reset_db` with `cwd ".."`, `DATABASE_URL` and `APP_ENV=demo`. Each spec calls it in `test.beforeAll`.
   - `seedCart(page, lines: CartLine[])` sets `CART_STORAGE_KEY` with `page.addInitScript` before navigation.
   - `placeOrderViaApi(request, items, key?)` POSTs `/checkout` straight to the backend with fixed contact and address values and returns the `Order`.
-  - `catalogueIds(request)` returns `{ spotlight, limited, soldOut }` product ids and slugs, read from `/collections/spotlight` and `/products`, looked up by sku through `catalogue_data`'s constants. Those constants are copied as TS consts in this file: `SPOTLIGHT_SKU = "HD-K2-GRY"`, `LIMITED_SKU = "OR-H1-BLK"`, `SOLD_OUT_SKU = "MR-SLIM2-WHT"`.
+  - `catalogueIds(request)` returns `{ spotlight, limited, soldOut }` product ids and slugs, read from `/collections/spotlight` and `/products`, looked up by sku through `catalogue_data`'s constants. Those constants are copied as TS consts in this file: `SPOTLIGHT_SKU = "HD-QUILL-GRY"`, `LIMITED_SKU = "OR-H1-BLK"`, `SOLD_OUT_SKU = "MR-SLIM2-WHT"`.
   - `TEST_CUSTOMER`: Sam Okafor, `sam.okafor@northfold.co.uk`, `07700 900412`, Northfold Studio Ltd, 14 Albion Street, Leeds, `LS1 6HX`, card `4242 4242 4242 4242`, expiry `08 / 30`, security code `123`.
 - **Known limitation:** `SimulatedProvider` keeps charged payment keys in memory across database resets. Because payment ids restart, a key can hit an earlier spec's cached outcome. This is harmless at 0% declines. Don't write declined-payment e2e tests against it; the decline path is covered by unit tests in F4.
 
-- [ ] **Step 1: Scaffold the app,** pin the versions, and run `npm run gen:api`.
+- [ ] **Step 1: Scaffold the app** as in Files (temp directory, then copy). Pin the versions, with `@playwright/test` at exactly `1.65.1` to match the browsers baked into the sandbox image. Run `npm run gen:api`.
 - [ ] **Step 2: Write the failing tests.**
   - `money.test.ts`: "119.00" gives "£119.00", and "0.00" gives "£0.00".
   - `cart.test.ts`:

@@ -75,8 +75,8 @@ def test_brands_follow_the_allocation_with_at_least_two_per_category():
 
 def test_scenario_products():
     rows = by_sku()
-    assert rows[cd.SPOTLIGHT_SKU][2:] == ("K2 Low Profile Wireless Keyboard", "Halden", "keyboards")
-    assert rows[cd.SPOTLIGHT_SKU][1] == "halden-k2-low-profile-wireless-keyboard"
+    assert rows[cd.SPOTLIGHT_SKU][2:] == ("Quill Low Profile Wireless Keyboard", "Halden", "keyboards")
+    assert rows[cd.SPOTLIGHT_SKU][1] == "halden-quill-low-profile-wireless-keyboard"
     assert rows[cd.LIMITED_SKU][2:] == ("H1 Wireless Headset", "Orrin", "audio")
     assert rows[cd.SOLD_OUT_SKU][2:] == ("Slim 2 Wireless Keyboard", "Marlow", "keyboards")
     assert rows[cd.DISCONTINUED_SKU][2:] == ("Bud 1 Wired Headset", "Marlow", "audio")
