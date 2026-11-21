@@ -258,6 +258,21 @@ def test_same_key_with_a_different_cart_is_refused(conn, shop):
     assert (count(conn, "orders"), stock(conn, shop["mouse"])) == before
 
 
+def test_retry_after_product_discontinued_returns_the_original_order(conn, shop):
+    """The fast path runs before validation: a retry gets its order back even if
+    the product has since stopped being sold."""
+    provider = ScriptedProvider()
+    first, _ = buy(conn, provider, shop, [(shop["mouse"], 1)])
+    conn.execute("UPDATE products SET active = false WHERE id = %s", [shop["mouse"]])
+
+    again, created = buy(conn, provider, shop, [(shop["mouse"], 1)])
+    assert created is False
+    assert again == first
+    assert count(conn, "orders") == 1
+    assert len(provider.charged) == 1
+    assert_invariants(conn)
+
+
 def test_same_key_different_address_is_a_conflict(conn, shop):
     provider = ScriptedProvider()
     first, _ = buy(conn, provider, shop, [(shop["mouse"], 1)])
@@ -341,24 +356,38 @@ def committed_shop(url):
         return make_shop(conn)
 
 
-def test_payment_is_requested_only_after_the_reservation_is_committed(committed_db):
-    """Notion: don't hold the DB transaction open through a remote payment call."""
+def guest_buy(conn, provider, shop, items, key="key-1"):
+    """buy(), through the guest path: find the customer by email, then checkout."""
+    contact = Contact(email="ann@example.com", name="Ann Lee", phone="07700 900000")
+    return orders.guest_checkout(conn, provider, contact=contact, address=DELIVERY,
+                                 items=items, idempotency_key=key)
+
+
+@pytest.mark.parametrize("place", [buy, guest_buy], ids=["checkout", "guest_checkout"])
+def test_payment_is_requested_only_after_the_reservation_is_committed(committed_db, place):
+    """Notion: don't hold the DB transaction open through a remote payment call.
+
+    Both entry points: guest_checkout must not wrap find_or_create and checkout
+    in one transaction, or the charge would happen inside it.
+    """
     shop = committed_shop(committed_db)
     seen_by_another_connection = {}
 
     def look_from_outside(key):
         with db.connect(committed_db) as observer:
             seen_by_another_connection["orders"] = count(observer, "orders")
+            seen_by_another_connection["customers"] = count(observer, "customers")
             seen_by_another_connection["stock"] = stock(observer, shop["keyboard"])
 
     provider = ScriptedProvider()
     provider.on_charge = look_from_outside
     with db.connect(committed_db) as conn:
         assert conn.info.transaction_status.name == "IDLE"
-        buy(conn, provider, shop, [(shop["keyboard"], 2)])
+        result = place(conn, provider, shop, [(shop["keyboard"], 2)])
+        assert result.order["status"] == "paid"
 
     # At charge time, the order and its reservation were already committed.
-    assert seen_by_another_connection == {"orders": 1, "stock": (2, 2)}
+    assert seen_by_another_connection == {"orders": 1, "customers": 1, "stock": (2, 2)}
 
 
 @pytest.mark.concurrency

@@ -401,8 +401,10 @@ def guest_checkout(
 
     The order dict has the same shape as get_order_by_token's.
 
-    The customer is committed on its own, before the order: a checkout refused
-    for stock still leaves the (harmless) customer row, and a retry finds it.
+    The customer is committed on its own, before the order. So any refused
+    checkout (not enough stock, an unknown or discontinued product, an
+    idempotency conflict) can leave a customer row with no orders. That is
+    harmless: the next checkout with that email finds and reuses it.
     """
     customer_id = customers.find_or_create(conn, contact)
     return checkout(

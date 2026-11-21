@@ -44,6 +44,8 @@ class DeliveryAddress:
 def find_or_create(conn: psycopg.Connection, contact: Contact) -> int:
     """The id of the customer with this email (case-insensitively), creating them if new.
 
+    The email is expected already stripped of whitespace (ContactIn does it).
+
     Safe under concurrency: two first-time checkouts with one new email get
     the same id and one row. Never overwrites an existing customer's name or
     phone.
