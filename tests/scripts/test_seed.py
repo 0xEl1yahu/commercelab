@@ -7,7 +7,7 @@ import pytest
 
 from commercelab.config import settings
 from scripts import catalogue_data, image_manifest, seed
-from scripts.catalogue_content import CONTENT, LABELS
+from scripts.catalogue_content import ARM_LABELS, ARM_SKUS, CONTENT, LABELS
 from tests.support.invariants import INVARIANTS, violations
 
 TABLES = [
@@ -139,7 +139,8 @@ def test_every_product_has_content(conn, seeded):
         assert 3 <= len(specs) <= 5, sku
         labels = [s["label"] for s in specs]
         assert all(s["label"].strip() and s["value"].strip() for s in specs), sku
-        assert set(labels) <= set(LABELS[category]), sku
+        allowed = ARM_LABELS if sku in ARM_SKUS else LABELS[category]
+        assert set(labels) <= set(allowed), sku
         assert sku in CONTENT
 
 
@@ -256,3 +257,33 @@ def test_real_image_bytes_keep_the_manifest_key(conn, monkeypatch):
     seed.write(conn, *seed.generate(42), image_bytes=lambda key: blob)
     assert conn.execute("SELECT sha256, data FROM images").fetchall() == [(sha, blob)]
     assert conn.execute("SELECT image_sha256 FROM product_images").fetchall() == [(sha,)]
+
+
+def test_placeholder_keys_for_a_shared_photo(conn, monkeypatch):
+    """Two products sharing one photo store it once, under the sha256 of its placeholder bytes."""
+    def entry(sha, position=1):
+        return image_manifest.ManifestImage(
+            position=position, sha256=sha, content_type="image/jpeg",
+            download_url="https://x/y.jpg", source_url="https://x/y",
+            licence="Unsplash License", credit="A. Photographer", alt=f"alt {sha[:4]}")
+
+    shared, other = "a" * 64, "b" * 64
+    slugs = [p[1] for p in catalogue_data.PRODUCTS[:2]]
+    manifest = {slugs[0]: [entry(shared), entry(other, 2)], slugs[1]: [entry(shared)]}
+    monkeypatch.setattr(image_manifest, "load_manifest", lambda: manifest)
+
+    seed.write(conn, *seed.generate(42))  # image_bytes=None: placeholder mode
+
+    expected = {sha: hashlib.sha256(b"placeholder:" + sha.encode()).hexdigest()
+                for sha in (shared, other)}
+    stored = conn.execute("SELECT sha256, data FROM images").fetchall()
+    assert len(stored) == 2
+    for key, data in stored:
+        assert bytes(data).startswith(b"placeholder:")
+        assert key == hashlib.sha256(bytes(data)).hexdigest()
+    assert {k for k, _ in stored} == set(expected.values())
+    rows = conn.execute("""SELECT p.slug, pi.position, pi.image_sha256 FROM product_images pi
+                           JOIN products p ON p.id = pi.product_id ORDER BY p.slug, pi.position""")
+    assert rows.fetchall() == sorted([(slugs[0], 1, expected[shared]),
+                                      (slugs[0], 2, expected[other]),
+                                      (slugs[1], 1, expected[shared])])

@@ -9,6 +9,7 @@ Every brand is invented. Each category uses its own spec labels, in this order:
   audio      Type, Connection, Battery, Microphone, Weight
   desk       Dimensions, Material, Power, Weight
   cables     Length, Ports, Power delivery, Data rate
+  arms       Screen size, VESA, Load per arm, Material, Mount  (the monitor arms, in monitors)
 
 Money is a string of pounds and pence, tax-inclusive, as the schema stores it.
 """
@@ -25,6 +26,10 @@ LABELS: dict[str, tuple[str, ...]] = {
     "desk": ("Dimensions", "Material", "Power", "Weight"),
     "cables": ("Length", "Ports", "Power delivery", "Data rate"),
 }
+
+# Monitor arms are in the monitors category but have their own spec labels.
+ARM_SKUS = ("TS-ARM1-BLK", "TS-ARM2-BLK", "TS-ARMHD-BLK")
+ARM_LABELS = ("Screen size", "VESA", "Load per arm", "Material", "Mount")
 
 # Share of the price the shop pays for the product, per category.
 COST_RATIO = {"keyboards": "0.58", "mice": "0.55", "monitors": "0.72", "audio": "0.57",
@@ -68,7 +73,7 @@ _RAW: dict[str, tuple[str, str, str, tuple[str | None, ...]]] = {
         ("UK ISO, full size", "USB-C", "Hot-swap linear", None, "1.4 kg")),
     "TS-FOLD-BLK": ("49.00", "Folds flat. Types like a full one.",
         ("A folding Bluetooth keyboard that fits in a jacket pocket. "
-        "Open it up and it is a full three-row layout for tablets and phones."),
+        "Open it up for a compact layout with a number row, made for tablets and phones."),
         ("UK ISO, folding", "Bluetooth 5.0", "Low-profile scissor", "Up to 2 months", "240 g")),
 
     # --- mice: Sensor, Connection, Buttons, Battery, Weight ---
@@ -78,8 +83,8 @@ _RAW: dict[str, tuple[str, str, str, tuple[str | None, ...]]] = {
         ("Optical, 1600 DPI", "USB receiver or Bluetooth", "5", "1 AA, up to 18 months",
          "82 g")),
     "KS-V3-GRY": ("69.00", "Handshake grip, relaxed wrist.",
-        ("A vertical mouse that holds your forearm in a natural position. "
-        "Most people feel the difference within a week."),
+        ("A vertical mouse with a handshake grip. "
+        "It holds your forearm in a natural position, so your wrist stays relaxed."),
         ("Optical, 1800 DPI", "USB receiver or Bluetooth", "6", "Rechargeable, up to 3 months",
          "110 g")),
     "KS-P5-BLK": ("89.00", "Precise, quick and quietly clever.",
@@ -96,7 +101,7 @@ _RAW: dict[str, tuple[str, str, str, tuple[str | None, ...]]] = {
         ("A compact wireless mouse with a soft-touch finish. "
         "It travels well and works on most surfaces."),
         ("Optical, 1200 DPI", "Bluetooth 5.0", "3", "1 AAA, up to 12 months", "58 g")),
-    "MR-M2-WHT": ("29.00", "A soft click, a steady hand.",
+    "MR-M2-WHT": ("29.00", "Quiet click, everyday comfort.",
         "A quiet-click mouse for everyday work. Light in the hand, easy on the ears.",
         ("Optical, 1200 DPI", "USB receiver", "3", "1 AA, up to 15 months", "74 g")),
     "MR-W1-BLK": ("12.00", "Plug in and get on with it.",
@@ -146,17 +151,17 @@ _RAW: dict[str, tuple[str, str, str, tuple[str | None, ...]]] = {
     "TS-ARM1-BLK": ("49.00", "Lift the screen. Free the desk.",
         ("A single monitor arm with a smooth gas spring. Clamps to the desk edge "
         "and holds screens up to 9 kg."),
-        ("Up to 32 inch", "VESA 75 x 75, 100 x 100", "Steel and aluminium", "Cable channel",
+        ("Up to 32 inch", "75 x 75, 100 x 100", "9 kg", "Steel and aluminium",
          "Desk clamp")),
     "TS-ARM2-BLK": ("89.00", "Two screens, one clamp.",
         ("A dual monitor arm for two screens up to 8 kg each. "
         "Each screen moves on its own, and the cables run through the arm."),
-        ("Up to 27 inch each", "VESA 75 x 75, 100 x 100", "Steel and aluminium",
-         "Cable channel", "Desk clamp")),
+        ("Up to 27 inch each", "75 x 75, 100 x 100", "8 kg", "Steel and aluminium",
+         "Desk clamp")),
     "TS-ARMHD-BLK": ("119.00", "For the heaviest screens.",
         ("A heavy-duty monitor arm for large and ultrawide screens up to 15 kg. "
         "It stays where you put it."),
-        ("Up to 49 inch", "VESA 100 x 100, 200 x 100", "Steel", "Cable channel",
+        ("Up to 49 inch", "100 x 100, 200 x 100", "15 kg", "Steel",
          "Desk clamp or grommet")),
 
     # --- audio: Type, Connection, Battery, Microphone, Weight ---
@@ -214,7 +219,7 @@ _RAW: dict[str, tuple[str, str, str, tuple[str | None, ...]]] = {
         ("A light bar that clips on top of your monitor. "
         "It lights the desk without a reflection in the glass."),
         ("45 cm wide", "Aluminium", "USB-A, 5 W", "310 g")),
-    "LM-C1-BLK": ("69.00", "Look as good as you sound.",
+    "LM-C1-BLK": ("69.00", "Look your best on every call.",
         ("A 1080p webcam with a wide lens, a privacy shutter and a built-in microphone. "
         "It sits on a monitor or a tripod."),
         ("90 x 30 x 30 mm", "ABS and glass", "USB-A cable", "130 g")),
@@ -296,7 +301,7 @@ def _build() -> dict[str, dict]:
             "tagline": tagline,
             "description": description,
             "specs": [{"label": label, "value": value}
-                      for label, value in zip(LABELS[cat], values, strict=True)
+                      for label, value in zip(ARM_LABELS if sku in ARM_SKUS else LABELS[cat], values, strict=True)
                       if value is not None],
         }
     return content
