@@ -1,0 +1,12 @@
+# Secrets and local config
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store

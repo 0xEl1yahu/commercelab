@@ -11,6 +11,7 @@
 
 BEGIN;
 
+DROP VIEW IF EXISTS product_availability;
 DROP TABLE IF EXISTS refunds;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS stock_movements;
@@ -98,6 +99,13 @@ CREATE TABLE inventory (
     CONSTRAINT inventory_reserved_non_negative CHECK (reserved >= 0),
     CONSTRAINT inventory_reserved_within_stock CHECK (reserved <= on_hand)
 );
+
+-- The single definition of "available". inventory.py owns the rule; catalogue
+-- and reports read this view instead of repeating the arithmetic, so a future
+-- change (e.g. ignoring expired reservations) happens in one place.
+CREATE VIEW product_availability AS
+SELECT product_id, on_hand, reserved, on_hand - reserved AS available
+FROM inventory;
 
 
 -- One row per order line held against stock. Status moves exactly once:
