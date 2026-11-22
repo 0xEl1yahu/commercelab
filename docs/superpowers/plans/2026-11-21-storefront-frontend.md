@@ -206,7 +206,7 @@ Everything the parallel streams import. The files are added to `docs/superpowers
   - The name as a headline of about 56px, then the tagline.
   - A pill button `Buy · ${formatGBP(price)}` and an underlined "Learn more", both linking to `/p/${slug}`.
   - The first image, large, in a rounded 18px panel on a white-to-surface gradient.
-- **"Featured":** the `featured` collection as a 4-column grid of `ProductTile` on a surface background.
+- **"Featured":** the `featured` collection as a 4-column grid of `ProductTile` on a **white** background. Tiles are pale grey cards with edge-to-edge photos (owner decision), so they need a white section to stand out; never place tiles on a `surface` section.
 - **"The quiet desk":** the title and description, then a 3-up row of its first 3 products. There is no collection link (collection pages aren't in v1).
 - **Category strip:** 6 tiles with each category's title and description, linking to `/c/[slug]`.
 
