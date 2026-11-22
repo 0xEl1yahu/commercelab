@@ -15,10 +15,11 @@ type Props = {
 };
 
 /**
- * A product in a grid: a white, 16px-rounded tile linking to /p/{slug}. The photo
- * sits edge to edge in its own 4:3 frame, inset 8px with concentric 8px corners, so
- * the tile reads the same on a white page or on the surface grey, with or without a
- * photo. Out-of-stock tiles dim the photo to 45%.
+ * A product in a grid: a pale-grey (surface), 16px-rounded tile linking to /p/{slug},
+ * so it stays visible on a white page. The photo fills the top of the tile edge to
+ * edge (4:3, object-cover), clipped to the tile's rounded corners; brand, name, price
+ * and stock sit below. With no photo, the frame takes a slightly deeper grey so it
+ * still reads as a frame. Out-of-stock tiles dim the photo to 45%.
  */
 export function ProductTile({
   product,
@@ -31,12 +32,17 @@ export function ProductTile({
     <Link
       href={`/p/${product.slug}`}
       data-testid="product-tile"
-      className="group flex h-full flex-col rounded-tile bg-white p-2 outline-offset-4"
+      className="group flex h-full flex-col overflow-hidden rounded-tile bg-surface outline-offset-4"
     >
-      <div className={cn("rounded-[8px]", soldOut && "opacity-45")}>
+      <div
+        className={cn(
+          "[&_[data-fallback=true]]:bg-line/60",
+          soldOut && "opacity-45",
+        )}
+      >
         <ProductImage image={product.image} sizes={sizes} priority={priority} />
       </div>
-      <div className="flex flex-1 flex-col gap-1 px-2 pt-3 pb-2 sm:px-3 sm:pb-3">
+      <div className="flex flex-1 flex-col gap-1 px-3 pt-3 pb-3.5 sm:px-4 sm:pb-4">
         <p className="text-caption text-muted">{product.brand}</p>
         <h3 className="text-callout font-semibold tracking-[-0.01em] text-ink text-pretty group-hover:underline group-hover:decoration-ink/30 group-hover:underline-offset-4">
           {product.name}
