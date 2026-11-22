@@ -1,0 +1,169 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Light theme only. `dark:` classes inside components/ui stay inert: they apply only
+   under a .dark ancestor, which the shop never sets (without this line Tailwind would
+   switch them on for anyone whose OS is in dark mode). */
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------------------
+   Direction A: product as hero. White and pale-grey surfaces, one tight sans,
+   rounded tiles on a grey ground, pill buttons. Photography carries the design.
+
+   Utilities these tokens give you (use them, not raw hex):
+     colours   text-ink  text-ink-2  text-muted  border-line  bg-surface
+               bg-accent text-accent  text-ok bg-ok  text-low bg-low  text-danger bg-danger
+     radii     rounded-tile (16px)  rounded-panel (18px)  rounded-pill
+     type      text-caption 12  text-footnote 13  text-callout 15  text-body 17
+               text-title-3 24  text-title-2 32  text-title-1 40  text-headline 56
+               tracking-headline (-0.03em), or the `headline` utility for all of it
+     layout    shop-container (centred, max-w-shop, side gutters)
+               var(--header-height): the sticky header's height, for sticky offsets
+   ------------------------------------------------------------------------------ */
+@theme inline {
+  /* the palette */
+  --color-ink: #1d1d1f;
+  --color-ink-2: #424245;
+  --color-muted: #6e6e73;
+  --color-line: #e5e5ea;
+  --color-surface: #f5f5f7;
+  --color-accent: #0071e3;
+  --color-ok: #2f9e5b;
+  --color-low: #d9822b;
+  --color-danger: #d70015;
+
+  /* shadcn/ui's semantic names, mapped onto the palette. Its `muted` and `accent`
+     background roles are served by `surface` (components/ui was edited to match),
+     so `muted` and `accent` keep the meanings above. */
+  --color-background: #ffffff;
+  --color-foreground: var(--color-ink);
+  --color-card: #ffffff;
+  --color-card-foreground: var(--color-ink);
+  --color-popover: #ffffff;
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted-foreground: var(--color-muted);
+  --color-accent-foreground: #ffffff;
+  --color-destructive: var(--color-danger);
+  --color-border: var(--color-line);
+  --color-input: #d2d2d7;
+  --color-ring: var(--color-accent);
+
+  /* radii */
+  --radius-tile: 16px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* type: the system stack, with self-hosted Inter (next/font) wherever there is no
+     Apple system font */
+  --font-sans: -apple-system, BlinkMacSystemFont, var(--font-inter), "Inter", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.34;
+  --text-footnote: 0.8125rem;
+  --text-footnote--line-height: 1.39;
+  --text-callout: 0.9375rem;
+  --text-callout--line-height: 1.43;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.48;
+  --text-title-3: 1.5rem;
+  --text-title-3--line-height: 1.17;
+  --text-title-2: 2rem;
+  --text-title-2--line-height: 1.13;
+  --text-title-1: 2.5rem;
+  --text-title-1--line-height: 1.1;
+  --text-headline: 3.5rem;
+  --text-headline--line-height: 1.07;
+
+  --tracking-headline: -0.03em;
+
+  --container-shop: 1180px;
+}
+
+:root {
+  /* The shop header (components/shell/site-header.tsx): one 52px row from md up;
+     below md the categories take a second, 40px row. */
+  --header-height: 92px;
+  color-scheme: light;
+}
+@media (width >= 48rem) {
+  :root {
+    --header-height: 52px;
+  }
+}
+
+/* Headlines: semibold, tight, balanced. Pair with a size: `headline text-title-1`. */
+@utility headline {
+  font-weight: 600;
+  letter-spacing: var(--tracking-headline);
+  color: var(--color-ink);
+  text-wrap: balance;
+}
+
+/* The page column every screen lines up on. */
+@utility shop-container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--container-shop);
+  padding-inline: 1rem;
+  @media (width >= 48rem) {
+    padding-inline: 1.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-ink text-callout antialiased;
+    font-feature-settings: "kern";
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  a,
+  button,
+  [role="button"],
+  input,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

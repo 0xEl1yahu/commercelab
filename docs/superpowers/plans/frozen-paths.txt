@@ -13,7 +13,8 @@
 # `storefront` and regenerates openapi.json. Contracts are fixed at the source, never
 # worked around.
 #
-# Deliberately not listed (owned by streams): scripts/seed.py (B1),
+# Deliberately not listed (owned by streams): frontend/app/page.tsx (an F0 placeholder; F1
+# replaces it), scripts/seed.py (B1),
 # scripts/image_manifest.json (B2), tests/domain/test_catalogue.py and
 # tests/api/test_catalogue_routes.py (B3), tests/api/test_order_routes.py (B5),
 # .gitignore (F0 adds frontend entries), and this file (F0 extends it).
@@ -59,6 +60,60 @@ dev/sandbox/Dockerfile
 dev/sandbox/entrypoint.sh
 dev/sandbox/run.sh
 
+# frontend (F0): scaffold, dependencies, tokens and configs
+frontend/package.json
+frontend/package-lock.json
+frontend/.npmrc
+frontend/.gitignore
+frontend/.env.example
+frontend/AGENTS.md
+frontend/components.json
+frontend/eslint.config.mjs
+frontend/next.config.ts
+frontend/tsconfig.json
+frontend/vitest.config.ts
+frontend/playwright.config.ts
+frontend/app/globals.css
+frontend/app/layout.tsx
+frontend/app/icon.svg
+# frontend (F0): API client, generated types, money and cart logic
+frontend/lib/api.ts
+frontend/lib/api-types.ts
+frontend/lib/proxy.ts
+frontend/lib/types.ts
+frontend/lib/money.ts
+frontend/lib/money.test.ts
+frontend/lib/cart.ts
+frontend/lib/cart.test.ts
+frontend/lib/utils.ts
+frontend/lib/utils.test.ts
+# frontend (F0): the three route handlers
+frontend/app/api/cart/quote/route.ts
+frontend/app/api/checkout/route.ts
+frontend/app/media/[key]/route.ts
+# frontend (F0): shell, cart state, shared product UI, shadcn/ui
+frontend/components/shell/site-header.tsx
+frontend/components/shell/site-footer.tsx
+frontend/components/shell/shop-header-slot.tsx
+frontend/components/cart/cart-provider.tsx
+frontend/components/cart/bag-button.tsx
+frontend/components/product/product-image.tsx
+frontend/components/product/stock-badge.tsx
+frontend/components/product/stock-badge.test.ts
+frontend/components/product/product-tile.tsx
+frontend/components/ui/button.tsx
+frontend/components/ui/checkbox.tsx
+frontend/components/ui/dropdown-menu.tsx
+frontend/components/ui/input.tsx
+frontend/components/ui/label.tsx
+frontend/components/ui/popover.tsx
+frontend/components/ui/sheet.tsx
+frontend/components/ui/slider.tsx
+frontend/components/ui/switch.tsx
+# frontend (F0): e2e support and the shell spec
+frontend/e2e/support.ts
+frontend/e2e/shell.spec.ts
+
 [signatures]
 # file: frozen names (everything else in the file belongs to the owning stream)
 
@@ -90,3 +145,7 @@ commercelab/domain/orders.py (B5):
 # Dependencies: streams may not add, remove or upgrade packages; ask the coordinator.
 pyproject.toml
 uv.lock
+
+[stubs]
+# (added by F0) Exists so imports resolve; only the owning stream implements it.
+frontend/components/cart/bag-drawer.tsx (F3)
