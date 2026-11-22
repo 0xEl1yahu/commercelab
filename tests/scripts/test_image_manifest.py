@@ -90,10 +90,8 @@ def test_keys_are_unique_and_well_formed():
         for image in images:
             assert SHA256.match(image.sha256), (slug, image.position)
             keys.append(image.sha256)
-    # a photo may be reused on two products, but never twice on the same product
-    for slug, images in manifest.items():
-        assert len({i.sha256 for i in images}) == len(images), slug
-    assert len(set(keys)) >= 60
+    # every image is a distinct photo, so every key is unique across the whole manifest
+    assert len(set(keys)) == len(keys) == 72
 
 
 @needs_cache
@@ -180,3 +178,52 @@ def test_fetch_exits_non_zero_on_a_hash_mismatch_naming_slug_and_position(sandbo
 
     assert "a-product" in str(stop.value) and "position 2" in str(stop.value)
     assert not (sandbox / "cache" / wrong).exists()
+
+
+def test_fetch_redownloads_a_corrupted_cached_file(sandbox, capsys):
+    good = b"real photo"
+    digest = hashlib.sha256(good).hexdigest()
+    (sandbox / "cache").mkdir()
+    (sandbox / "cache" / digest).write_bytes(b"truncated")
+    (sandbox / "manifest.json").write_text(json.dumps({"a-product": [entry(1, digest)]}))
+
+    fetch_images.main([], client=serve(good))
+
+    assert (sandbox / "cache" / digest).read_bytes() == good
+    assert capsys.readouterr().out.strip() == "Fetched 1, cached 0"
+
+
+def test_a_failed_write_leaves_nothing_under_the_hash_name(sandbox, monkeypatch):
+    data = b"photo"
+    digest = hashlib.sha256(data).hexdigest()
+    (sandbox / "manifest.json").write_text(json.dumps({"a-product": [entry(1, digest)]}))
+
+    def broken_replace(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fetch_images.os, "replace", broken_replace)
+
+    with pytest.raises(OSError):
+        fetch_images.main([], client=serve(data))
+
+    assert list((sandbox / "cache").iterdir()) == []
+
+
+def test_a_failed_download_names_the_product_and_position(sandbox):
+    (sandbox / "manifest.json").write_text(
+        json.dumps({"a-product": [entry(1, hashlib.sha256(b"x").hexdigest())]})
+    )
+    failing = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500)))
+
+    with pytest.raises(SystemExit) as stop:
+        fetch_images.main([], client=failing)
+
+    assert str(stop.value).startswith("download failed for a-product, position 1")
+
+
+def test_manifest_write_back_leaves_no_temp_files(sandbox):
+    (sandbox / "manifest.json").write_text(json.dumps({"a-product": [entry(1, "")]}))
+
+    fetch_images.main([], client=serve(b"fresh"))
+
+    assert sorted(p.name for p in sandbox.iterdir()) == ["cache", "manifest.json"]
