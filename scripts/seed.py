@@ -111,11 +111,14 @@ def build_products(rng: random.Random) -> list[dict]:
         })
 
     # A 10% price rise on a few products from REPRICE_DATE. products.price holds
-    # the current price; earlier order items keep the old one.
+    # the current price; earlier order items keep the old one. The new price is
+    # rounded to whole pounds, like every catalogue price, so a shopper sees
+    # £384.00 rather than an odd-looking £383.90.
     repriceable = [p for p in products if p["sku"] not in SCENARIO_SKUS]
     for product in rng.sample(repriceable, N_REPRICED):
         product["price_before_reprice"] = product["price"]
-        product["price"] = money(product["price"] * Decimal("1.10"))
+        raised = (product["price"] * Decimal("1.10")).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        product["price"] = money(raised)
     return products
 
 
