@@ -20,7 +20,7 @@ export function CollectionBand({ collection, layout }: Props) {
   const products = layout === "row" ? collection.products.slice(0, 3) : collection.products;
 
   return (
-    <section aria-labelledby={id} className="bg-white py-14 md:py-20">
+    <section aria-labelledby={id} className="bg-white pt-14 md:pt-20">
       <div className="shop-container">
         <div className="mb-6 flex flex-col gap-2 md:mb-8 md:flex-row md:items-end md:justify-between md:gap-12">
           <h2 id={id} className="headline text-title-2 md:text-title-1">

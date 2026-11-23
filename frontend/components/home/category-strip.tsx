@@ -5,7 +5,7 @@ import type { Category } from "@/lib/types";
 /** Every category as a plain pale-grey tile, title and one line, linking to its listing. */
 export function CategoryStrip({ categories }: { categories: Category[] }) {
   return (
-    <section aria-labelledby="shop-by-category" className="bg-white pt-4 pb-16 md:pb-24">
+    <section aria-labelledby="shop-by-category" className="bg-white pt-14 pb-16 md:pt-20 md:pb-24">
       <div className="shop-container">
         <h2 id="shop-by-category" className="headline mb-6 text-title-2 md:mb-8 md:text-title-1">
           Shop by category
