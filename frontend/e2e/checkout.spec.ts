@@ -153,6 +153,25 @@ test("double clicking Pay sends one request", async ({ page, request }) => {
   expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
 });
 
+test("two submits in the same instant send one request", async ({ page, request }) => {
+  // Faster than any re-render: the disabled button can't help, only the in-flight guard.
+  await seedCart(page, [{ product_id: ids.spotlight.id, quantity: 1 }]);
+  const sent = recordCheckoutRequests(page);
+  const before = rowCounts();
+
+  await openCheckout(page);
+  await fillDetails(page);
+  await page.getByRole("form", { name: "Checkout" }).evaluate((form: HTMLFormElement) => {
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+
+  const order = await landedOnOrder(page, request);
+  expect(order.status).toBe("paid");
+  expect(sent).toHaveLength(1);
+  expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
+});
+
 test("someone else buying the last unit shows the stock warning and corrected total", async ({
   page,
   request,
