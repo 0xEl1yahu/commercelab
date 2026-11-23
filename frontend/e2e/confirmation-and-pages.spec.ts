@@ -144,7 +144,7 @@ test("content pages carry the shop's promises and details", async ({ page }) => 
   await page.goto("/privacy");
   main = page.getByRole("main");
   await expect(main).toContainText("never reach CommerceLab");
-  await expect(main).toContainText(/credit/i);
+  await expect(main).toContainText("We record the photographer's credit and licence for each photograph.");
 });
 
 test("content pages fit a phone without sideways scrolling", async ({ page }) => {

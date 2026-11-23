@@ -32,7 +32,7 @@ export default function TermsPage() {
         </p>
         <p>
           If a payment is declined, you haven&apos;t been charged and your bag is kept. If we can&apos;t yet confirm a
-          payment, we say so on your order page and check it again for you.
+          payment, your order page says so, and shows the result once the payment is confirmed.
         </p>
         <p>We don&apos;t send confirmation emails. Keep the link to your order page to check on it later.</p>
       </ContentSection>

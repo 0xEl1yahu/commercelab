@@ -42,8 +42,8 @@ export default function PrivacyPage() {
 
       <ContentSection title="Photography">
         <p>
-          Product photographs come from Unsplash and Pexels photographers under those sites&apos; licences. The credit
-          for each photograph is kept with the image.
+          Product photographs come from Unsplash and Pexels photographers under those sites&apos; licences. We record
+          the photographer&apos;s credit and licence for each photograph.
         </p>
       </ContentSection>
 

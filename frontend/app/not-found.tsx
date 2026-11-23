@@ -43,7 +43,7 @@ export default async function NotFound() {
             <li key={category.slug}>
               <Link
                 href={`/c/${category.slug}`}
-                className="inline-flex h-9 items-center rounded-pill bg-surface px-4 text-callout text-ink transition-colors hover:bg-[#ebebef]"
+                className="inline-flex h-9 items-center rounded-pill bg-surface px-4 text-callout text-ink transition-colors hover:bg-line/70"
               >
                 {category.title}
               </Link>

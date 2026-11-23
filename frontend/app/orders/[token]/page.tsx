@@ -20,16 +20,28 @@ export default async function OrderPage({ params }: Props) {
   return (
     <section className="flex flex-1 justify-center px-4 py-12 md:py-20">
       <div className="w-full max-w-[560px]">
-        {order.status === "paid" || order.status === "fulfilled" ? (
-          <Paid order={order} />
-        ) : order.status === "cancelled" ? (
-          <Cancelled order={order} />
-        ) : (
-          <Pending order={order} />
-        )}
+        <ByStatus order={order} />
       </div>
     </section>
   );
+}
+
+function ByStatus({ order }: { order: Order }) {
+  const status = order.status;
+  switch (status) {
+    case "paid":
+    case "fulfilled":
+      return <Paid order={order} />;
+    case "pending":
+      return <Pending order={order} />;
+    case "cancelled":
+      return <Cancelled order={order} />;
+    default: {
+      // A new status in the API breaks the build here instead of showing the wrong page.
+      const unhandled: never = status;
+      throw new Error(`Unhandled order status: ${String(unhandled)}`);
+    }
+  }
 }
 
 function Reference({ reference }: { reference: string }) {
@@ -93,9 +105,9 @@ function Paid({ order }: { order: Order }) {
         <div data-testid="order-total" className="flex justify-between gap-4 text-body font-semibold text-ink">
           <dt>Total paid</dt> <dd className="tabular-nums">{formatGBP(order.total)}</dd>
         </div>
-        <p data-testid="order-vat" className="flex justify-between gap-4 text-footnote text-muted">
-          <span>Includes VAT</span> <span className="tabular-nums">{formatGBP(order.vat_included)}</span>
-        </p>
+        <div data-testid="order-vat" className="flex justify-between gap-4 text-footnote text-muted">
+          <dt>Includes VAT</dt> <dd className="tabular-nums">{formatGBP(order.vat_included)}</dd>
+        </div>
       </dl>
 
       {address ? (
@@ -138,8 +150,8 @@ function Pending({ order }: { order: Order }) {
       <header>
         <h1 className="headline text-title-2 md:text-title-1">We&apos;re confirming your payment.</h1>
         <p className="mt-4 text-body text-muted text-pretty">
-          This can take a moment. Please don&apos;t pay again: your order is saved under the reference below, and this
-          page will show the result when you refresh it.
+          Don&apos;t pay again. Your order is saved under the reference below. Check this page again in a few
+          minutes.
         </p>
       </header>
       <Reference reference={order.reference} />

@@ -33,8 +33,8 @@ export default function DeliveryReturnsPage() {
           your order reference and the items you&apos;re sending back. We&apos;ll tell you where to send them.
         </p>
         <p>
-          Once your return reaches us and we&apos;ve checked it, we refund the price you paid for those items to the
-          card you paid with.
+          Once your return reaches us and we&apos;ve checked it, we&apos;ll refund the price you paid for those
+          items.
         </p>
       </ContentSection>
 
@@ -52,7 +52,8 @@ export default function DeliveryReturnsPage() {
       <ContentSection title="Faulty or wrong item">
         <p>
           If something arrives damaged or isn&apos;t what you ordered, write to us as soon as you can with your order
-          reference and a photo. We&apos;ll put it right.
+          reference and a photo, at{" "}
+          <a href="mailto:hello@commercelab.example">hello@commercelab.example</a>.
         </p>
       </ContentSection>
     </ContentPage>
