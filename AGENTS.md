@@ -106,10 +106,16 @@ main
 |---|---|---|
 | 0 | B0, the contract freeze | Local Docker |
 | 1 | B1–B6 backend streams, plus F0, the frontend contracts (merges last) | Local Docker, in parallel |
-| 2 | F1–F5 frontend screens | Claude Code cloud sessions, in parallel |
+| 2 | F1–F5 frontend screens | **Natively on the Mac**, 2 at a time (owner's decision; see below) |
 | 3 | B7 docs, then the whole-branch review; the owner merges into `main` | Local |
 
-**Hybrid sandboxes (the owner's decision):**
+**Native from Phase 2 (owner's decision, 2026-11-23):**
+- Build and test natively on the Mac: local PostgreSQL 17 and Node, at most 2 streams at a time.
+- Each stream has its own e2e database and ports, set through `E2E_DATABASE_URL`, `E2E_API_PORT` and `E2E_WEB_PORT` (and `TEST_DATABASE_URL` for pytest).
+- Containerising the finished app comes later, as its own piece of work.
+- Per-stream Docker sandboxes are not used any more. Docker's disk on the external drive failed under load.
+
+**Phases 0–1 used hybrid sandboxes:**
 - **Local streams** run in Docker containers with memory limits:
   - backend: 1 GB and 1 CPU
   - F0: 3 GB and 2 CPUs

@@ -63,7 +63,21 @@ Rules for streams:
 5. **Clean up each stream as soon as it merges** (owner's rule, to free memory and disk): `docker rm -f cl-<stream>`, remove its `cl-<stream>-*` volumes, `git worktree remove ../commercelab-worktrees/sf/<stream>`, and `git branch -d sf/<stream>` (`-d` refuses to delete an unmerged branch). If a later fix is needed, cut a fresh branch from `storefront`.
 6. **Agents never merge into `main`, and never push without the owner's say-so.**
 
-## 4. Where streams run: hybrid (owner's decision)
+## 4. Where streams run
+
+> **Update, 2026-11-23 (owner's decision): Phase 2 onwards builds natively on the Mac; containerising comes later.**
+> - **What happened:** Phases 0–1 ran in local Docker as described below. Then the cloud route couldn't be launched from the coordinating session (`claude --cloud` needs an interactive terminal, and the remote agent option fell back to local checkouts). The Docker VM disk on the external USB drive also failed twice under load (read-only filesystem).
+> - **The change:** the owner chose to build natively and containerise the finished app later, as its own piece of work.
+> - **How native streams run:**
+>   - At most 2 at a time.
+>   - On the Mac's PostgreSQL 17, each with its own `E2E_DATABASE_URL` (`commercelab_<stream>_e2e`) and its own `E2E_API_PORT` and `E2E_WEB_PORT`. The ports are f-home 8110/3110, f-listing 8120/3120, f-product-bag 8130/3130, f-checkout 8140/3140, and f-pages 8150/3150 (3151 for backend-down).
+>   - Builders commit locally and never push.
+> - **Merge gates** also run natively, on `storefront`.
+> - **`dev/sandbox/`** stays in the repo, unused for now.
+>
+> The text below describes how Phases 0–1 ran.
+
+### Original arrangement: hybrid
 
 | Work | Runs in | Limits |
 |---|---|---|
