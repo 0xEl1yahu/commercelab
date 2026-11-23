@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Playwright output (coordinator fix after F3: lint failed after any e2e run).
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 
