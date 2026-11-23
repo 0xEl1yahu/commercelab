@@ -105,10 +105,10 @@ function Paid({ order }: { order: Order }) {
         <div data-testid="order-total" className="flex justify-between gap-4 text-body font-semibold text-ink">
           <dt>Total paid</dt> <dd className="tabular-nums">{formatGBP(order.total)}</dd>
         </div>
-        <div data-testid="order-vat" className="flex justify-between gap-4 text-footnote text-muted">
-          <dt>Includes {formatGBP(order.vat_included)} VAT</dt>
-        </div>
       </dl>
+      <p data-testid="order-vat" className="text-footnote text-muted">
+        Includes {formatGBP(order.vat_included)} VAT
+      </p>
 
       {address ? (
         <div data-testid="order-address" className="rounded-panel bg-surface px-5 py-4 text-callout">
