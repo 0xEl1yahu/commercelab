@@ -1,22 +1,29 @@
 # F2 report: category listing with the filter bar (stream `sf/f-listing`)
 
-Built on branch `f-listing-work` (tracking `origin/sf/f-listing`, base `bc6b9b0`). Not pushed, as instructed.
+Built on branch `f-listing-work` (tracking `origin/sf/f-listing`), rebased onto `storefront` after the F2 review. Not pushed, as instructed.
 
 ## Commits
 
-- Feature: `58a14d0` `feat(frontend): category listing with filter bar, sort and paging`
-- This report is committed last, on top of it (`git log -1` on the branch).
+- Feature (after rebase): `987ea63` `feat(frontend): category listing with filter bar, sort and paging`
+- Review follow-ups and this report update: the commit `fix(frontend): F2 review follow-ups` (HEAD of the branch).
 
 ## Results
 
 | Command | Result |
 |---|---|
-| `npm test` | 5 test files passed, 43 tests passed (15 are the new `listing-params.test.ts`) |
+| `npm test` | 6 test files passed, 47 tests passed (15 are the new `listing-params.test.ts`) |
 | `npm run typecheck` | passes (`gen:api`, no diff in `lib/api-types.ts`, `tsc --noEmit`) |
 | `npm run lint` | passes, no output (run after `rm -rf playwright-report test-results`) |
-| `E2E_DATABASE_URL=postgresql://localhost/commercelab_flist_e2e E2E_API_PORT=8120 E2E_WEB_PORT=3120 npm run e2e -- listing.spec.ts` | 12 passed, 0 skipped, 0 failed |
+| `E2E_DATABASE_URL=postgresql://localhost/commercelab_flist_e2e E2E_API_PORT=8120 E2E_WEB_PORT=3120 npm run e2e -- listing.spec.ts` | 13 passed, 0 skipped, 0 failed |
 
 Test first: `listing-params.test.ts` was run red (module missing) before `lib/listing-params.ts` existed. Mutation check: disabling the min/max swap made `swaps min and max when reversed` fail; restored.
+
+## Review follow-ups
+
+1. The price `Slider` gets `thumbLabels` ("Minimum price", "Maximum price") and `getValueText` (`£${v}`); the popover is a dialog named "Price range". The e2e checks the thumb names and `aria-valuetext`.
+2. The slider's 250 ms timer reads the latest filters through a ref. New test `a change made while the price slider settles is kept`; reverting the ref makes it fail (mutation checked).
+3. With no filters active, an empty result shows "Nothing here yet." and no "Clear filters" link; with filters it keeps "No products match these filters." and the link. Not covered by e2e: `GET /categories` lists only categories with active products, so an empty category is a 404 and cannot be reached through the API.
+4. Focus after a keyboard slider commit and Escape: not reproduced. The price popover tests (4 tests, 15 repeats, 60 runs) all passed with an assertion that the Price trigger is focused after Escape, so nothing was changed.
 
 ## What was built
 

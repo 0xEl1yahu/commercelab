@@ -48,7 +48,15 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
     query: toApiQuery(category.slug, listing),
   });
 
-  const clearFilters = `${basePath}${toSearch({
+  // With nothing filtered, an empty result means the category itself is empty: there is
+  // no filter to clear.
+  const filtered =
+    listing.brands.length > 0 ||
+    listing.min !== undefined ||
+    listing.max !== undefined ||
+    listing.inStock;
+
+  const clearFilters =`${basePath}${toSearch({
     ...listing,
     brands: [],
     min: undefined,
@@ -85,10 +93,19 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
           <div className="pt-6 md:pt-8">
             {total === 0 ? (
               <div className="flex flex-col items-center gap-3 py-20 text-center">
-                <p className="text-body text-ink-2">No products match these filters.</p>
-                <Link href={clearFilters} className="text-callout font-medium text-accent hover:underline">
-                  Clear filters
-                </Link>
+                {filtered ? (
+                  <>
+                    <p className="text-body text-ink-2">No products match these filters.</p>
+                    <Link
+                      href={clearFilters}
+                      className="text-callout font-medium text-accent hover:underline"
+                    >
+                      Clear filters
+                    </Link>
+                  </>
+                ) : (
+                  <p className="text-body text-ink-2">Nothing here yet.</p>
+                )}
               </div>
             ) : (
               <>

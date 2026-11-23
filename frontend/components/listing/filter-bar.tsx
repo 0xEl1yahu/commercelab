@@ -244,6 +244,13 @@ function PriceFilter({
   const values = draft !== null && draft.key === urlKey ? draft.values : fromUrl;
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The timer fires up to PRICE_SETTLE_MS after the slider was released. It must apply
+  // the price to the filters as they are then (a brand ticked in that window, say), not
+  // as they were when the slider was released: so it reads them through a ref.
+  const latest = useRef({ current, onChange });
+  useEffect(() => {
+    latest.current = { current, onChange };
+  });
   useEffect(
     () => () => {
       if (timer.current !== null) clearTimeout(timer.current);
@@ -256,8 +263,8 @@ function PriceFilter({
   const apply = ([from, to]: number[]) => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      onChange({
-        ...current,
+      latest.current.onChange({
+        ...latest.current.current,
         // A thumb at its end of the range means "no limit on that side".
         min: from <= low ? undefined : String(from),
         max: to >= high ? undefined : String(to),
@@ -274,7 +281,7 @@ function PriceFilter({
         {active ? <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
         <ChevronDown aria-hidden="true" className="size-3.5 text-muted" />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 gap-4 rounded-panel p-5">
+      <PopoverContent align="start" aria-label="Price range" className="w-72 gap-4 rounded-panel p-5">
         <div className="flex items-baseline justify-between text-callout tabular-nums text-ink">
           <span>{shortGBP(values[0])}</span>
           <span className="text-muted">to</span>
@@ -288,7 +295,8 @@ function PriceFilter({
           value={values}
           onValueChange={(next) => setDraft({ key: urlKey, values: [next[0], next[1]] })}
           onValueCommit={apply}
-          aria-label="Price range"
+          thumbLabels={["Minimum price", "Maximum price"]}
+          getValueText={(value) => `£${value}`}
         />
       </PopoverContent>
     </Popover>

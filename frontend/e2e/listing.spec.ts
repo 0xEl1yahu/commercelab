@@ -125,15 +125,31 @@ test("the price popover filters by a range and shows it as a pill", async ({ pag
   const all = await tilePrices(page);
 
   await page.getByRole("button", { name: "Price" }).click();
+  await expect(page.getByRole("dialog", { name: "Price range" })).toBeVisible();
   const thumbs = page.getByRole("slider");
   await expect(thumbs).toHaveCount(2);
+  // The thumbs say which is which, and read their value in pounds.
+  await expect(page.getByRole("slider", { name: "Minimum price" })).toHaveAttribute(
+    "aria-valuetext",
+    /^£\d+$/,
+  );
+  await expect(page.getByRole("slider", { name: "Maximum price" })).toHaveAttribute(
+    "aria-valuetext",
+    /^£\d+$/,
+  );
   // Raise the lower bound with the keyboard; the change applies when the thumb is released.
   await thumbs.first().focus();
   for (let i = 0; i < 40; i += 1) await page.keyboard.press("ArrowRight");
 
   await expect(page).toHaveURL(/min=\d+/);
   const floor = Number(new URL(page.url()).searchParams.get("min"));
+  await expect(page.getByRole("slider", { name: "Minimum price" })).toHaveAttribute(
+    "aria-valuetext",
+    `£${floor}`,
+  );
   await page.keyboard.press("Escape");
+  // Closing the popover hands focus back to its trigger.
+  await expect(page.getByRole("button", { name: "Price" })).toBeFocused();
 
   await expect(page.getByRole("link", { name: /^Remove price filter/ })).toBeVisible();
   const filtered = await tilePrices(page);
@@ -144,6 +160,19 @@ test("the price popover filters by a range and shows it as a pill", async ({ pag
   await page.getByRole("link", { name: /^Remove price filter/ }).click();
   await expect(page).toHaveURL(/\/c\/keyboards$/);
   await expect(count(page)).toHaveText("9 results");
+});
+
+test("a change made while the price slider settles is kept", async ({ page }) => {
+  await page.goto("/c/keyboards");
+  await page.getByRole("button", { name: "Price" }).click();
+  await page.getByRole("slider", { name: "Minimum price" }).focus();
+  for (let i = 0; i < 20; i += 1) await page.keyboard.press("ArrowRight");
+  // Straight away, inside the settle window: switch on "In stock only".
+  await page.getByRole("switch", { name: "In stock only" }).click();
+
+  await expect(page).toHaveURL(/in_stock=1/);
+  await expect(page).toHaveURL(/min=\d+/);
+  await expect(page.getByRole("switch", { name: "In stock only" })).toBeChecked();
 });
 
 test("a shared filtered URL opens already filtered, and back undoes a filter", async ({ page }) => {
