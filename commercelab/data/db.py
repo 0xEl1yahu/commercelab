@@ -26,12 +26,14 @@ WHO USES WHAT
     FastAPI routes   get_conn()             (a dependency; tests override it)
     Scripts          connect()              (one standalone connection, no pool)
     App start/stop   open_pool() / close_pool()
+    Tests, reset_db  create_database_if_missing()
 """
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 import psycopg
+from psycopg import conninfo, sql
 from psycopg_pool import ConnectionPool
 
 from commercelab.config import settings
@@ -108,3 +110,21 @@ def get_conn() -> Iterator[psycopg.Connection]:
 def ping(conn: psycopg.Connection) -> bool:
     """True if the database answers. Used by GET /health."""
     return conn.execute("SELECT 1").fetchone() == (1,)
+
+
+def create_database_if_missing(url: str) -> None:
+    """Create the database `url` names, if it doesn't exist yet. Leaves an existing one alone.
+
+    CREATE DATABASE can't run inside a transaction or from the database being
+    created, so this connects to the server's `postgres` database instead.
+    """
+    dbname = conninfo.conninfo_to_dict(url).get("dbname")
+    if not dbname:
+        raise ValueError(f"the database URL names no database: {url!r}")
+    admin_url = conninfo.make_conninfo(url, dbname="postgres")
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        exists = admin.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s", [dbname]
+        ).fetchone()
+        if not exists:
+            admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))

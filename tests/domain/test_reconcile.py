@@ -16,7 +16,7 @@ from commercelab.config import settings
 from commercelab.data import db
 from commercelab.domain import inventory, orders, payments
 from scripts import reconcile as reconcile_script
-from tests.support.fakes import ScriptedProvider, make_shop
+from tests.support.fakes import DELIVERY, ScriptedProvider, make_shop
 from tests.support.invariants import assert_all_hold as assert_invariants
 
 HOLD = timedelta(minutes=settings.reservation_hold_minutes)
@@ -49,14 +49,14 @@ def abandoned_checkout(conn, shop, quantity=1, key="abandoned"):
     """Step 1 only: as if the process died before calling the provider."""
     order_id, _ = orders.place_order(
         conn, customer_id=shop["customer"], items=[(shop["keyboard"], quantity)],
-        idempotency_key=key)
+        address=DELIVERY, idempotency_key=key)
     return order_id
 
 
 def timed_out_checkout(conn, shop, provider, quantity=1, key="timed-out"):
     result = orders.checkout(
         conn, provider, customer_id=shop["customer"],
-        items=[(shop["keyboard"], quantity)], idempotency_key=key)
+        items=[(shop["keyboard"], quantity)], address=DELIVERY, idempotency_key=key)
     assert result.order["payment_status"] == "unknown"
     return result.order["id"]
 
@@ -186,7 +186,8 @@ def test_a_customer_retry_after_cancellation_gets_the_cancelled_order(conn, shop
 
     provider = ScriptedProvider()
     result = orders.checkout(conn, provider, customer_id=shop["customer"],
-                             items=[(shop["keyboard"], 1)], idempotency_key="abandoned")
+                             items=[(shop["keyboard"], 1)], address=DELIVERY,
+                             idempotency_key="abandoned")
     assert (result.order["id"], result.order["status"]) == (order_id, "cancelled")
     assert provider.calls == 0  # a cancelled order is never charged
 

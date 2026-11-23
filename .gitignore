@@ -10,3 +10,19 @@ __pycache__/
 
 # OS / editor
 .DS_Store
+
+# Brainstorming mockups (local only)
+.superpowers/
+
+# Downloaded stock photos (scripts/fetch_images); the bytes are seeded into PostgreSQL
+.cache/
+
+# Storefront (frontend/)
+frontend/node_modules/
+frontend/.next/
+frontend/test-results/
+frontend/playwright-report/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/

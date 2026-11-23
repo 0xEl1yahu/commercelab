@@ -13,9 +13,15 @@ from commercelab.config import settings
 from commercelab.data import db
 from commercelab.domain import payments
 
+
+def build_demo_provider() -> payments.SimulatedProvider:
+    """The simulated provider, declining settings.simulated_decline_percent% of payments."""
+    return payments.SimulatedProvider(decline_percent=settings.simulated_decline_percent)
+
+
 # One instance for the whole process: the simulated provider remembers what it
 # has charged (for lookup), and a new instance per request would forget it.
-_demo_provider = payments.SimulatedProvider()
+_demo_provider = build_demo_provider()
 
 
 def get_payment_provider() -> payments.PaymentProvider:

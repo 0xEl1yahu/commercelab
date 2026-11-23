@@ -17,7 +17,12 @@ What it simulates (Jan-Oct 2026):
     stock movements that are consistent with that state
   - occasional failed payment attempts before a success, a few 'unknown'
     payments on recent orders, and partial/full refunds on old orders
-  - one limited keyboard with exactly 2 in stock, for the design exercise
+  - one limited product (catalogue_data.LIMITED_SKU) with exactly 2 in stock,
+    two low-stock products and one sold-out product, for the design exercise
+
+Product identity (sku, slug, name, brand, category) comes from
+scripts/catalogue_data.py; price, copy and specs from scripts/catalogue_content.py;
+photos from scripts/image_manifest.json.
 """
 
 import argparse
@@ -25,13 +30,23 @@ import hashlib
 import json
 import random
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from commercelab.config import settings
 from commercelab.data import db
+from scripts import catalogue_data, image_manifest
+from scripts.catalogue_content import CONTENT
+from scripts.catalogue_data import (
+    DISCONTINUED_SKU,
+    LIMITED_SKU,
+    LOW_STOCK_SKUS,
+    SOLD_OUT_SKU,
+)
 
 PENNY = Decimal("0.01")
 
@@ -44,35 +59,15 @@ END = datetime(2026, 10, 31, 23, 59, tzinfo=UTC)  # the simulated "now"
 N_CUSTOMERS = 200
 N_ORDERS = 1500
 N_REPRICED = 5
-LIMITED_SKU = "KB-LTD-01"
 
-# sku, name, category, price, unit_cost
-CATALOGUE = [
-    ("KB-TKL-01", "Tenkeyless Mechanical Keyboard", "keyboards", "89.00", "41.00"),
-    ("KB-FULL-01", "Full-size Mechanical Keyboard", "keyboards", "109.00", "52.00"),
-    ("KB-65-01", "65% Wireless Keyboard", "keyboards", "129.00", "63.00"),
-    ("KB-LOW-01", "Low-profile Keyboard", "keyboards", "69.00", "30.00"),
-    ("MS-ERG-01", "Ergonomic Vertical Mouse", "mice", "49.00", "19.50"),
-    ("MS-GAM-01", "Lightweight Gaming Mouse", "mice", "59.00", "24.00"),
-    ("MS-TRV-01", "Travel Mouse", "mice", "25.00", "9.00"),
-    ("MN-27Q-01", "27in QHD Monitor", "monitors", "279.00", "182.00"),
-    ("MN-32K-01", "32in 4K Monitor", "monitors", "449.00", "301.00"),
-    ("MN-24F-01", "24in FHD Monitor", "monitors", "139.00", "88.00"),
-    ("MN-ARM-01", "Single Monitor Arm", "monitors", "45.00", "17.00"),
-    ("AU-HP-01", "Closed-back Headphones", "audio", "99.00", "44.00"),
-    ("AU-EB-01", "Wireless Earbuds", "audio", "79.00", "33.00"),
-    ("AU-MIC-01", "USB Condenser Microphone", "audio", "65.00", "27.00"),
-    ("AU-SPK-01", "Desktop Speakers", "audio", "119.00", "58.00"),
-    ("CB-USBC-01", "USB-C Cable 2m", "cables", "12.00", "2.40"),
-    ("CB-HDMI-01", "HDMI 2.1 Cable 2m", "cables", "15.00", "3.10"),
-    ("CB-DOCK-01", "USB-C Docking Station", "cables", "149.00", "78.00"),
-    ("CB-HUB-01", "7-port USB Hub", "cables", "35.00", "13.00"),
-    ("DK-MAT-01", "Large Desk Mat", "desk", "29.00", "8.50"),
-    ("DK-LAMP-01", "LED Desk Lamp", "desk", "55.00", "21.00"),
-    ("DK-STD-01", "Laptop Stand", "desk", "39.00", "14.00"),
-    ("DK-RST-01", "Wrist Rest", "desk", "19.00", "5.20"),
-    ("DK-CAM-01", "1080p Webcam", "desk", "69.00", "29.00"),
-]
+# Products the simulation never orders, so their stock stays as the scenarios need.
+UNORDERED_SKUS = {LIMITED_SKU, SOLD_OUT_SKU, *LOW_STOCK_SKUS}
+# Opening stock for the low-stock products, in LOW_STOCK_SKUS order.
+LOW_STOCK_OPENING = (4, 5)
+# Products whose stock or price a scenario depends on: never repriced.
+SCENARIO_SKUS = {catalogue_data.SPOTLIGHT_SKU, LIMITED_SKU, *LOW_STOCK_SKUS, SOLD_OUT_SKU,
+                 DISCONTINUED_SKU}
+
 
 FIRST_NAMES = [
     "Ava", "Ben", "Chloe", "Dev", "Ella", "Finn", "Grace", "Hari", "Isla", "Jack",
@@ -91,29 +86,39 @@ def money(value) -> Decimal:
 
 # --- catalogue and customers -------------------------------------------------
 
+def build_categories() -> list[dict]:
+    return [
+        {"slug": slug, "title": title, "description": description, "position": position}
+        for position, (slug, title, description) in enumerate(catalogue_data.CATEGORIES, start=1)
+    ]
+
+
 def build_products(rng: random.Random) -> list[dict]:
     products = []
-    for product_id, (sku, name, category, price, cost) in enumerate(CATALOGUE, start=1):
+    for product_id, (sku, slug, name, brand, category) in enumerate(
+        catalogue_data.PRODUCTS, start=1
+    ):
+        content = CONTENT[sku]
         products.append({
-            "id": product_id, "sku": sku, "name": name, "category": category,
-            "price": money(price), "unit_cost": money(cost), "active": True,
-            "created_at": CATALOGUE_DATE, "price_before_reprice": None,
+            "id": product_id, "sku": sku, "slug": slug, "name": name, "brand": brand,
+            "category": category, "tagline": content["tagline"],
+            "description": content["description"], "specs": content["specs"],
+            "price": money(content["price"]), "unit_cost": money(content["unit_cost"]),
+            # Discontinued: deactivated, never deleted.
+            "active": sku != DISCONTINUED_SKU,
+            "created_at": END - timedelta(days=1) if sku == LIMITED_SKU else CATALOGUE_DATE,
+            "price_before_reprice": None,
         })
 
     # A 10% price rise on a few products from REPRICE_DATE. products.price holds
-    # the current price; earlier order items keep the old one.
-    for product in rng.sample(products, N_REPRICED):
+    # the current price; earlier order items keep the old one. The new price is
+    # rounded to whole pounds, like every catalogue price, so a shopper sees
+    # £384.00 rather than an odd-looking £383.90.
+    repriceable = [p for p in products if p["sku"] not in SCENARIO_SKUS]
+    for product in rng.sample(repriceable, N_REPRICED):
         product["price_before_reprice"] = product["price"]
-        product["price"] = money(product["price"] * Decimal("1.10"))
-
-    # One discontinued product: still referenced by old orders, so never deleted.
-    rng.choice(products)["active"] = False
-
-    products.append({
-        "id": len(products) + 1, "sku": LIMITED_SKU, "name": "Limited Edition Keyboard",
-        "category": "keyboards", "price": money("199.00"), "unit_cost": money("95.00"),
-        "active": True, "created_at": END - timedelta(days=1), "price_before_reprice": None,
-    })
+        raised = (product["price"] * Decimal("1.10")).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        product["price"] = money(raised)
     return products
 
 
@@ -121,6 +126,34 @@ def price_at(product: dict, when: datetime) -> Decimal:
     if product["price_before_reprice"] is not None and when < REPRICE_DATE:
         return product["price_before_reprice"]
     return product["price"]
+
+
+def build_collections(products: list[dict]) -> tuple[list[dict], list[dict]]:
+    ids = {p["sku"]: p["id"] for p in products}
+    collections, links = [], []
+    for position, (slug, title, description, skus) in enumerate(catalogue_data.COLLECTIONS, 1):
+        collections.append({"id": position, "slug": slug, "title": title,
+                            "description": description, "position": position})
+        links.extend({"collection_id": position, "product_id": ids[sku], "position": i}
+                     for i, sku in enumerate(skus, 1))
+    return collections, links
+
+
+def build_images(products: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Image rows (no bytes: generate stays pure) and gallery rows, from the manifest."""
+    manifest = image_manifest.load_manifest()
+    ids = {p["slug"]: p["id"] for p in products}
+    images: dict[str, dict] = {}
+    gallery = []
+    for slug, entries in manifest.items():
+        for entry in entries:
+            images.setdefault(entry.sha256, {
+                "sha256": entry.sha256, "content_type": entry.content_type,
+                "source_url": entry.source_url, "licence": entry.licence,
+                "credit": entry.credit})
+            gallery.append({"product_id": ids[slug], "position": entry.position,
+                            "image_sha256": entry.sha256, "alt": entry.alt})
+    return list(images.values()), gallery
 
 
 def build_customers(rng: random.Random) -> list[dict]:
@@ -181,11 +214,16 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
     for product in products:
         if product["sku"] == LIMITED_SKU:
             move(product["id"], 2, "restock", product["created_at"])
+        elif product["sku"] in LOW_STOCK_SKUS:
+            move(product["id"], LOW_STOCK_OPENING[LOW_STOCK_SKUS.index(product["sku"])],
+                 "restock", OPENING_STOCK_DATE)
+        elif product["sku"] == SOLD_OUT_SKU:
+            pass  # nothing on hand, and no movement to say otherwise
         else:
             move(product["id"], rng.randint(40, 120), "restock", OPENING_STOCK_DATE)
 
-    # The limited keyboard and the discontinued product are never ordered.
-    sellable = [p for p in products if p["active"] and p["sku"] != LIMITED_SKU]
+    # The scenario products and the discontinued one are never ordered.
+    sellable = [p for p in products if p["active"] and p["sku"] not in UNORDERED_SKUS]
     span = int((END - START).total_seconds())
     placed_times = sorted(START + timedelta(seconds=rng.randint(0, span)) for _ in range(N_ORDERS))
 
@@ -196,6 +234,7 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
             "order_id": order_id, "product_id": p["id"],
             "quantity": rng.choices([1, 2, 3], weights=[70, 22, 8])[0],
             "unit_price": price_at(p, placed_at), "unit_cost": p["unit_cost"],
+            "product_name": p["name"], "sku": p["sku"],
         } for p in rng.sample(sellable, n_lines)]
         total = money(sum(i["quantity"] * i["unit_price"] for i in items))
         status = pick_status(rng, placed_at)
@@ -203,7 +242,8 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
         data["orders"].append({
             "id": order_id, "customer_id": customer["id"], "status": status, "total": total,
             "idempotency_key": f"seed-{order_id:06d}",
-            "request_hash": request_hash(customer["id"], items), "created_at": placed_at,
+            "request_hash": request_hash(customer["id"], items),
+            "public_token": f"{rng.getrandbits(128):032x}", "created_at": placed_at,
         })
         data["order_items"].extend(items)
 
@@ -256,14 +296,26 @@ def simulate(rng: random.Random, products: list[dict], customers: list[dict]) ->
 
 # --- writing ------------------------------------------------------------------
 
+# Every table, children before their parents.
 ALL_TABLES = ("refunds, payments, stock_movements, reservations, inventory, "
-              "order_items, orders, customers, products")
+              "order_addresses, order_items, orders, customers, "
+              "collection_products, collections, product_images, images, products, categories")
 
 COLUMNS = {
-    "products": ["sku", "name", "category", "price", "unit_cost", "active", "created_at"],
+    "categories": ["slug", "title", "description", "position"],
+    "products": ["sku", "slug", "name", "brand", "category", "tagline", "description", "specs",
+                 "price", "unit_cost", "active", "created_at"],
+    "images": ["sha256", "content_type", "data", "source_url", "licence", "credit"],
+    "product_images": ["product_id", "position", "image_sha256", "alt"],
+    "collections": ["slug", "title", "description", "position"],
+    "collection_products": ["collection_id", "product_id", "position"],
     "customers": ["name", "email", "created_at"],
-    "orders": ["customer_id", "status", "total", "idempotency_key", "request_hash", "created_at"],
-    "order_items": ["order_id", "product_id", "quantity", "unit_price", "unit_cost"],
+    "orders": ["customer_id", "status", "total", "idempotency_key", "request_hash",
+               "public_token", "created_at"],
+    "order_items": ["order_id", "product_id", "quantity", "unit_price", "unit_cost",
+                    "product_name", "sku"],
+    "order_addresses": ["order_id", "name", "phone", "company", "vat_number", "line1", "line2",
+                        "city", "postcode", "country"],
     "inventory": ["product_id", "on_hand", "reserved", "updated_at"],
     "reservations": ["order_id", "product_id", "quantity", "status", "expires_at", "created_at"],
     "stock_movements": ["product_id", "quantity_delta", "reason", "order_id", "created_at"],
@@ -273,7 +325,7 @@ COLUMNS = {
 
 # Parent tables: other rows reference their ids, so each insert is checked
 # against the id the simulation assumed.
-TABLES_WITH_PLANNED_IDS = {"products", "customers", "orders", "payments"}
+TABLES_WITH_PLANNED_IDS = {"products", "collections", "customers", "orders", "payments"}
 
 
 def insert_rows(cur: psycopg.Cursor, table: str, rows: list[dict]) -> None:
@@ -281,7 +333,7 @@ def insert_rows(cur: psycopg.Cursor, table: str, rows: list[dict]) -> None:
     # Table and column names come from the constants above, never from input.
     sql = (f"INSERT INTO {table} ({', '.join(columns)}) "
            f"VALUES ({', '.join(['%s'] * len(columns))})")
-    params = [[row[c] for c in columns] for row in rows]
+    params = [[Jsonb(row[c]) if c == "specs" else row[c] for c in columns] for row in rows]
     if table in TABLES_WITH_PLANNED_IDS:
         # returning=True sends every row in one batch and keeps each RETURNING result.
         # Each inserted row produces its own result set; walk them with nextset().
@@ -298,11 +350,35 @@ def insert_rows(cur: psycopg.Cursor, table: str, rows: list[dict]) -> None:
         cur.executemany(sql, params)
 
 
-def write(conn: psycopg.Connection, products, customers, data) -> None:
+PLACEHOLDER_PREFIX = b"placeholder:"
+
+
+def write(conn: psycopg.Connection, products, customers, data, *,
+          image_bytes: Callable[[str], bytes] | None = None) -> None:
+    """Load the dataset. image_bytes(sha) supplies each photo's bytes; the key stays the
+    manifest's. With None, each image gets placeholder bytes and a key recomputed from them."""
+    keys: dict[str, str] = {}
+    image_rows = []
+    for image in data["images"]:
+        if image_bytes is None:
+            blob = PLACEHOLDER_PREFIX + image["sha256"].encode()
+            key = hashlib.sha256(blob).hexdigest()
+        else:
+            blob, key = image_bytes(image["sha256"]), image["sha256"]
+        keys[image["sha256"]] = key
+        image_rows.append({**image, "sha256": key, "data": blob})
+    gallery = [{**row, "image_sha256": keys[row["image_sha256"]]}
+               for row in data["product_images"]]
+
     with conn.cursor() as cur:
         # RESTART IDENTITY makes the ids start at 1 again, matching the plan.
         cur.execute(f"TRUNCATE {ALL_TABLES} RESTART IDENTITY")
+        insert_rows(cur, "categories", data["categories"])
         insert_rows(cur, "products", products)
+        insert_rows(cur, "collections", data["collections"])
+        insert_rows(cur, "collection_products", data["collection_products"])
+        insert_rows(cur, "images", image_rows)
+        insert_rows(cur, "product_images", gallery)
         insert_rows(cur, "customers", customers)
         for table in ("orders", "order_items", "inventory", "reservations",
                       "stock_movements", "payments", "refunds"):
@@ -314,7 +390,11 @@ def generate(seed: int) -> tuple[list[dict], list[dict], dict]:
     rng = random.Random(seed)
     products = build_products(rng)
     customers = build_customers(rng)
-    return products, customers, simulate(rng, products, customers)
+    data = simulate(rng, products, customers)
+    data["categories"] = build_categories()
+    data["collections"], data["collection_products"] = build_collections(products)
+    data["images"], data["product_images"] = build_images(products)
+    return products, customers, data
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -330,7 +410,7 @@ def main(argv: list[str] | None = None) -> None:
     # One transaction: commits on success, rolls back everything on any error,
     # so the database is never left half-seeded.
     with db.connect() as conn, conn.transaction():
-        write(conn, products, customers, data)
+        write(conn, products, customers, data, image_bytes=image_manifest.cached_bytes)
 
     counts = {"products": len(products), "customers": len(customers),
               **{t: len(data[t]) for t in COLUMNS if t in data}}

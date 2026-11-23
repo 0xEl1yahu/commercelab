@@ -11,10 +11,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from commercelab.api.models import InsufficientStockOut
-from commercelab.domain import catalogue, inventory, orders
+from commercelab.domain import catalogue, images, inventory, orders
 
 STATUS_FOR = {
     catalogue.ProductNotFound: 404,
+    catalogue.CollectionNotFound: 404,
+    images.ImageNotFound: 404,
     orders.OrderNotFound: 404,
     orders.IdempotencyConflict: 409,
     orders.ProductUnavailable: 422,
