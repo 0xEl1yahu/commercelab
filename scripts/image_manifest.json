@@ -2,32 +2,22 @@
   "halden-quill-low-profile-wireless-keyboard": [
     {
       "position": 1,
-      "sha256": "10ed85c6c0fa3e7c3fec9e7c723bbd7c01629fc0a8ba6b3c74f2c98d30a0d1cd",
+      "sha256": "1d99db6c447df43af6588edcc31931eca2b51676e6166cc5566751c3614bf17f",
       "content_type": "image/jpeg",
-      "download_url": "https://images.unsplash.com/photo-1669884210028-81aa4c7442e5?w=1600&q=80&fm=jpg",
-      "source_url": "https://unsplash.com/photos/tROXvYvFtB4",
+      "download_url": "https://images.unsplash.com/photo-1586775490184-b79f0621891f?w=1600&q=80&fm=jpg",
+      "source_url": "https://unsplash.com/photos/kigHD-rVJzA",
       "licence": "Unsplash License",
-      "credit": "Hannes Köttner",
+      "credit": "iMattSmart",
       "alt": "Halden Quill Low Profile Wireless Keyboard"
     },
     {
       "position": 2,
-      "sha256": "e4ce389d92332be12c7dc31c8f126571535cb836f4bc8a41e9a3b003696980f9",
+      "sha256": "4485d8a6094f3b3cd25a0565367bef6935bbcdb2c16294dc76eda6955fa23e1a",
       "content_type": "image/jpeg",
-      "download_url": "https://images.unsplash.com/photo-1669884210062-e3055c8c8f5d?w=1600&q=80&fm=jpg",
-      "source_url": "https://unsplash.com/photos/QpTZcTlk08g",
-      "licence": "Unsplash License",
-      "credit": "Hannes Köttner",
-      "alt": "Halden Quill Low Profile Wireless Keyboard, side view"
-    },
-    {
-      "position": 3,
-      "sha256": "975d5df70342cb9fd0f6bcc7c8bbf4d181a3d4bbea24679a1ff0b89117a772cd",
-      "content_type": "image/jpeg",
-      "download_url": "https://images.unsplash.com/photo-1608377205700-249f4b48b180?w=1600&q=80&fm=jpg",
-      "source_url": "https://unsplash.com/photos/xb0lxn8hEEE",
-      "licence": "Unsplash License",
-      "credit": "Moritz Kindler",
+      "download_url": "https://images.pexels.com/photos/7580925/pexels-photo-7580925.jpeg?auto=compress&cs=tinysrgb&w=1600",
+      "source_url": "https://www.pexels.com/photo/person-using-white-apple-keyboard-7580925/",
+      "licence": "Pexels License",
+      "credit": "RDNE Stock project",
       "alt": "Halden Quill Low Profile Wireless Keyboard, in use"
     }
   ],

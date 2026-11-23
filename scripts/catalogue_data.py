@@ -181,3 +181,8 @@ COLLECTIONS: list[tuple[str, str, str, list[str]]] = [
 # How many images B2 curates per product: 3 for a product in the spotlight or
 # featured collections, 1 for every other product.
 IMAGE_COUNT = {"spotlight or featured": 3, "other": 1}
+
+# Owner decision (2026-11-23): stock libraries have no clean side view of a light,
+# logo-free, English-layout keyboard, so the spotlight keyboard keeps 2 photos
+# (hero and in use) instead of 3.
+IMAGE_COUNT_OVERRIDES = {SPOTLIGHT_SKU: 2}

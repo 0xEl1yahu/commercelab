@@ -31,6 +31,8 @@ def highlighted_skus() -> set[str]:
 
 
 def expected_count(sku: str) -> int:
+    if sku in cd.IMAGE_COUNT_OVERRIDES:
+        return cd.IMAGE_COUNT_OVERRIDES[sku]
     return cd.IMAGE_COUNT["spotlight or featured" if sku in highlighted_skus() else "other"]
 
 
@@ -54,9 +56,12 @@ def test_manifest_covers_every_active_product_with_the_right_count():
 def test_alt_text_is_brand_and_name_with_a_suffix_for_later_positions():
     manifest = load_manifest()
     suffixes = {1: "", 2: ", side view", 3: ", in use"}
-    for _, slug, name, brand, _ in active_rows():
+    # A product with an image-count override keeps its hero and its "in use" photo.
+    two_photo_suffixes = {1: "", 2: ", in use"}
+    for sku, slug, name, brand, _ in active_rows():
+        table = two_photo_suffixes if cd.IMAGE_COUNT_OVERRIDES.get(sku) == 2 else suffixes
         for image in manifest[slug]:
-            assert image.alt == f"{brand} {name}{suffixes[image.position]}", (slug, image.position)
+            assert image.alt == f"{brand} {name}{table[image.position]}", (slug, image.position)
 
 
 def test_every_entry_has_licence_credit_and_source():
@@ -91,7 +96,7 @@ def test_keys_are_unique_and_well_formed():
             assert SHA256.match(image.sha256), (slug, image.position)
             keys.append(image.sha256)
     # every image is a distinct photo, so every key is unique across the whole manifest
-    assert len(set(keys)) == len(keys) == 72
+    assert len(set(keys)) == len(keys) == sum(expected_count(sku) for sku, *_ in active_rows())
 
 
 @needs_cache
