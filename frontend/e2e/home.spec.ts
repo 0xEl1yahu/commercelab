@@ -23,6 +23,15 @@ test("hero shows the spotlight product with tagline and links to it", async ({ p
   const learnMore = hero.getByRole("link", { name: /^Learn more/ });
   await expect(learnMore).toHaveAttribute("href", `/p/${spotlight.slug}`);
   await expect(hero.getByTestId("product-image")).toHaveCount(1);
+  await expect(hero.getByTestId("product-image").locator("img")).toHaveAttribute("alt", /\S/);
+});
+
+test("hero product photo is mostly above the fold on a laptop", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const box = (await page.getByTestId("hero-image").boundingBox())!;
+  const visible = Math.min(box.y + box.height, 800) - box.y;
+  expect(visible / box.height).toBeGreaterThan(0.6);
 });
 
 test("featured shows 8 tiles each with name, price and stock label", async ({ page }) => {
@@ -58,6 +67,20 @@ test("the quiet desk shows its description and first three products", async ({ p
   for (const [i, product] of collection.products.slice(0, 3).entries()) {
     await expect(tiles.nth(i)).toHaveAttribute("href", `/p/${product.slug}`);
   }
+  // Collection pages aren't in v1: the only links are the three product tiles.
+  const hrefs = await section
+    .getByRole("link")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("href")));
+  expect(hrefs).toHaveLength(3);
+  for (const href of hrefs) expect(href).toMatch(/^\/p\//);
+});
+
+test("on mobile the quiet desk row scrolls sideways", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/");
+  const row = page.getByRole("region", { name: "The quiet desk" }).getByRole("list");
+  const [scrollWidth, clientWidth] = await row.evaluate((el) => [el.scrollWidth, el.clientWidth]);
+  expect(scrollWidth).toBeGreaterThan(clientWidth);
 });
 
 test("category strip links to all six categories", async ({ page }) => {

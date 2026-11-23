@@ -101,6 +101,39 @@ throwaway spec took them and was then deleted.
   - Some photos have their own backgrounds (the light bar's amber glow, the monitor arm's
     window), as stock photography does, and the tiles show them edge to edge.
 
+## Review polish ("fix(frontend): F1 review design polish")
+
+These changes answer the coordinator's review. The checks were re-run afterwards, on the
+same database and ports:
+- `npm test`: 28 passed
+- `npm run typecheck`: exit 0
+- `npm run lint`: exit 0
+- `npm run e2e -- home.spec.ts`: 10 passed, 0 skipped
+
+The screenshots were retaken to the same paths.
+
+- **Hero above the fold.**
+  - The photo panel is now 16:10, set through a wrapper override, so `ProductImage` is
+    untouched. The image is positioned at `50% 70%`, which takes most of the crop from
+    the top.
+  - Top padding is tighter, and the name sits on one line from md.
+  - At 1280×800, the whole keyboard shows above the fold, with only its bottom edge
+    under it.
+- **No seam:** the gradient now runs white → surface → white, so the hero blends into
+  the white Featured band.
+- **Mobile headline** uses the `text-title-1` token.
+- **Band headers:** in both bands, the description now sits left-aligned under the title
+  (`text-pretty`, 52ch).
+- **Category tiles:**
+  - The description sits directly under the title.
+  - A muted "→" nudges right on hover and darkens. It respects reduced motion.
+  - The hover colour is now `bg-line/70`, a token.
+- **Tests added:**
+  - the hero image has a non-empty alt
+  - the hero photo is more than 60% visible at 1280×800
+  - the quiet desk has only its three product links (no collection link)
+  - on mobile, the quiet-desk row actually scrolls (`scrollWidth > clientWidth`)
+
 ## Notes for other streams and the coordinator
 
 - **Section landmarks:** sections are `<section aria-labelledby>`, so tests can find them

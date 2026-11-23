@@ -15,12 +15,22 @@ export function CategoryStrip({ categories }: { categories: Category[] }) {
             <li key={category.slug}>
               <Link
                 href={`/c/${category.slug}`}
-                className="group flex h-full min-h-32 flex-col justify-between gap-6 rounded-tile bg-surface p-4 outline-offset-4 transition-colors hover:bg-[#efeff2] sm:p-6 md:min-h-40"
+                className="group flex h-full flex-col gap-1 rounded-tile bg-surface p-4 outline-offset-4 transition-colors duration-200 hover:bg-line/70 sm:p-5 md:p-6"
               >
-                <span className="text-body font-semibold tracking-[-0.015em] text-ink md:text-title-3">
-                  {category.title}
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className="text-body font-semibold tracking-[-0.015em] text-ink md:text-title-3">
+                    {category.title}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="text-callout text-muted transition-transform duration-200 ease-out group-hover:translate-x-1 group-hover:text-ink motion-reduce:transition-none"
+                  >
+                    →
+                  </span>
                 </span>
-                <span className="text-footnote text-muted md:text-callout">{category.description}</span>
+                <span className="text-footnote text-pretty text-muted md:text-callout">
+                  {category.description}
+                </span>
               </Link>
             </li>
           ))}
