@@ -175,6 +175,8 @@ describe("payBlocker", () => {
     expect(payBlocker({ ...locked, ready: false })).toBe("loading");
     // ...but Pay waits for the quote of the locked request itself.
     expect(payBlocker({ ...locked, lockedQuoting: true })).toBe("quoting");
+    // ...and never pays it without that price: a failed quote blocks too.
+    expect(payBlocker({ ...locked, lockedQuoteFailed: true })).toBe("quote-failed");
   });
 
   it("a bag the quote cut on load can still pay (the provider doesn't re-quote a cut)", () => {

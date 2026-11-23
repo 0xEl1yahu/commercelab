@@ -198,6 +198,7 @@ export function CheckoutForm() {
   const [placed, setPlaced] = useState(false);
   // The quote for the locked request's own items (not today's bag), once it arrives.
   const [lockedQuote, setLockedQuote] = useState<{ for: SentRequest; quote: CartQuote | null } | null>(null);
+  const [lockedQuoteTry, setLockedQuoteTry] = useState(0);
   const locked = lockedRequest !== null;
   const lockedSummary = lockedQuote !== null && lockedQuote.for === lockedRequest ? lockedQuote : null;
 
@@ -247,14 +248,17 @@ export function CheckoutForm() {
     submitting,
     locked,
     lockedQuoting: locked && lockedSummary === null,
+    // The earlier order's own quote failed every try: no price, so no Pay.
+    lockedQuoteFailed: locked && lockedSummary !== null && lockedSummary.quote === null,
   });
   const stale = locked
-    ? lockedSummary === null
+    ? lockedSummary === null || lockedSummary.quote === null
     : cart.quoting || cart.quoteFailed || (cart.quote !== null && !quoteDescribes(cart.lines, cart.quote));
 
   // While locked, ask for a quote of exactly the request Pay will re-send, so the
   // summary and the Pay label describe that request, not today's bag (which may have
   // changed in another tab, or been cut because the earlier order holds the stock).
+  // `lockedQuoteTry` is bumped by "Try again" after every try failed.
   useEffect(() => {
     if (lockedRequest === null) return;
     let cancelled = false;
@@ -265,7 +269,7 @@ export function CheckoutForm() {
     return () => {
       cancelled = true;
     };
-  }, [lockedRequest]);
+  }, [lockedRequest, lockedQuoteTry]);
 
   // --- what each answer does -------------------------------------------------------
 
@@ -569,6 +573,12 @@ export function CheckoutForm() {
   };
 
   const retryQuote = () => {
+    if (locked) {
+      // Ask again for the earlier order's own quote (Pay waits for it).
+      setLockedQuote(null);
+      setLockedQuoteTry((n) => n + 1);
+      return;
+    }
     // open() asks for a new quote when the last one failed; close() straight away so
     // the bag drawer never shows over the checkout.
     cart.open();

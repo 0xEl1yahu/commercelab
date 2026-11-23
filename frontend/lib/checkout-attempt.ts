@@ -151,7 +151,6 @@ export function clearAttempt(storage: AttemptStorage): void {
   }
 }
 
-
 /** An in-memory Storage, for tests and for browsers where sessionStorage is blocked. */
 export function memoryStorage(): AttemptStorage {
   const items = new Map<string, string>();

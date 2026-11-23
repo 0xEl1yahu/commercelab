@@ -476,6 +476,50 @@ test("start a new order unlocks the form, and the next Pay uses a new key", asyn
   expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
 });
 
+test("a locked order is never paid without its price: Pay waits until its quote arrives", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60_000); // the quote's own retries take 1 + 2 + 4 s
+  const product = fresh();
+  await seedCart(page, [{ product_id: product.id, quantity: 1 }]);
+  const sent = recordCheckoutRequests(page);
+  const before = rowCounts();
+  await loseFirstAnswer(page);
+
+  await openCheckout(page);
+  await fillDetails(page);
+  await payButton(page).click();
+  await expect(page.getByTestId("checkout-message")).toContainText("Something went wrong.");
+
+  // From now on every quote fails, so the earlier order can't be priced.
+  await page.route("**/api/cart/quote", (route) => route.abort("failed"));
+  await page.reload();
+  await fillCard(page);
+
+  const hint = page.getByText("We couldn't check your bag's prices.");
+  await expect(hint).toBeVisible({ timeout: 20_000 });
+  await expect(payButton(page)).toBeDisabled();
+  await expect(payButton(page)).toHaveText("Pay");
+  await expect(page.getByTestId("order-summary").getByTestId("summary-line")).toHaveCount(0);
+  // The way out stays offered.
+  await expect(page.getByRole("button", { name: "Start a new order" })).toBeVisible();
+  expect(sent).toHaveLength(1);
+
+  // Quotes work again: Try again prices the earlier order, and Pay can finish it.
+  await page.unroute("**/api/cart/quote");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(payButton(page)).toHaveText(`Pay ${formatGBP(product.price)}`);
+  await expect(payButton(page)).toBeEnabled();
+  await payButton(page).click();
+
+  const order = await landedOnOrder(page, request);
+  expect(order.items.map((item) => [item.product_id, item.quantity])).toEqual([[product.id, 1]]);
+  expect(sent).toHaveLength(2);
+  expect(sent[1].key).toBe(sent[0].key);
+  expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
+});
+
 test("a bag the quote cuts on load can still pay, at the cut total", async ({ page, request }) => {
   const lamp = await lowStockProduct(request, "lamp");
   await seedCart(page, [{ product_id: lamp.id, quantity: 50 }]);

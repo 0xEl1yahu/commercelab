@@ -1,5 +1,29 @@
 # F4 Checkout: builder's report
 
+## Third review fix (one commit: "fix(frontend): never pay a locked order without its price")
+
+This closes probe D: an order was locked, its own quote failed after every retry, and Pay was still enabled with an empty summary.
+
+- **Pay is blocked.** `payBlocker` gains `lockedQuoteFailed`, which returns `"quote-failed"`. The form sets it when the order is locked and its quote attempt has finished with no quote (`lockedSummary.quote === null`). Before that answer arrives, Pay was already blocked by `lockedQuoting`, so Pay is now blocked whenever `locked && (lockedSummary === null || lockedSummary.quote === null)`.
+- **The same "Try again" hint as the unlocked path appears.** It reads "We couldn't check your bag's prices. Try again". While locked, its button re-runs the locked `fetchQuote`: it clears `lockedQuote` and bumps the effect's `lockedQuoteTry`. "Start a new order" stays available as the way out.
+- **Tidying.** The doubled blank lines left by assembling `lib/checkout-outcome.ts` and `lib/checkout-attempt.ts` are gone.
+- **New tests:**
+  - **Unit:** `payBlocker` returns `"quote-failed"` for a locked order whose quote failed.
+  - **E2E:** `a locked order is never paid without its price: Pay waits until its quote arrives`.
+    - First the order is locked: the first Pay answer is lost, and the page reloads with `/api/cart/quote` aborted.
+    - After the quote's retries, the hint shows, Pay is disabled and reads plain "Pay", the summary has no lines, "Start a new order" is offered, and no second request has been sent.
+    - Then the route is restored and "Try again" is pressed: Pay reads `Pay £x`, it is enabled, and it finishes the same order with the same key. Exactly one order and one payment result.
+- **Results:**
+
+  | Command | Result |
+  |---|---|
+  | `npm test` | `Test Files 8 passed (8)`, `Tests 82 passed (82)` |
+  | `npm run typecheck` | exit 0 |
+  | `rm -rf playwright-report test-results && npm run lint` | exit 0 |
+  | e2e on `commercelab_fco_e2e`, ports 8140/3140 | `19 passed (36.6s)`. Nothing skipped. Servers stopped |
+
+- **Mutation 9.** I replaced the new condition with `lockedQuoteFailed: false`. The new e2e test went red: no hint, and Pay was left enabled. I then restored it, and `grep MUTATION` finds nothing.
+
 ## Re-review fixes (one commit: "fix(frontend): F4 re-review fixes")
 
 **1. While locked, the summary and Pay describe the request Pay will re-send.**

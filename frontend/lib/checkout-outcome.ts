@@ -81,7 +81,6 @@ export function interpretCheckoutResponse(status: number, body: unknown): Outcom
   return { kind: "retryable" };
 }
 
-
 export type PayState = {
   ready: boolean;
   lines: CartLine[];
@@ -97,6 +96,8 @@ export type PayState = {
   locked?: boolean;
   /** Locked, and the quote for the stored request itself hasn't arrived yet. */
   lockedQuoting?: boolean;
+  /** Locked, and every try to quote the stored request failed: its price is unknown. */
+  lockedQuoteFailed?: boolean;
 };
 
 export type PayBlocker = "loading" | "empty" | "submitting" | "quote-failed" | "quoting" | "sold-out";
@@ -140,7 +141,9 @@ export function payBlocker(state: PayState): PayBlocker | null {
   if (!state.ready) return "loading";
   if (state.locked) {
     if (state.submitting) return "submitting";
-    return state.lockedQuoting ? "quoting" : null;
+    if (state.lockedQuoting) return "quoting";
+    // Never pay a locked order the shopper can't see priced.
+    return state.lockedQuoteFailed ? "quote-failed" : null;
   }
   if (state.lines.length === 0) return "empty";
   if (state.submitting) return "submitting";
