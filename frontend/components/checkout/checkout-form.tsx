@@ -43,10 +43,12 @@ import {
   uncertainAttempt,
   type AttemptStorage,
 } from "@/lib/checkout-attempt";
+import { toQuoteRequest, type CartLine } from "@/lib/cart";
 import {
   interpretCheckoutResponse,
   payBlocker,
   quoteDescribes,
+  quoteMatchesExactly,
   type Outcome,
 } from "@/lib/checkout-outcome";
 import { recheckUntilKnown, stillUnknown } from "@/lib/checkout-recheck";
@@ -67,7 +69,7 @@ import {
   type FieldErrors,
 } from "@/lib/checkout-schema";
 import { formatGBP } from "@/lib/money";
-import type { CheckoutRequest } from "@/lib/types";
+import type { CartQuote, CheckoutRequest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { AwaitingPanel } from "./awaiting-panel";
@@ -111,6 +113,39 @@ async function postCheckout({ body, key }: SentRequest): Promise<Outcome> {
     status = 0;
   }
   return interpretCheckoutResponse(status, json);
+}
+
+const QUOTE_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+
+/**
+ * POST /api/cart/quote for these items, retried after 1 s, 2 s and 4 s. Null if
+ * every try failed (or `cancelled()` turned true): the summary then shows no prices.
+ */
+async function fetchQuote(items: CartLine[], cancelled: () => boolean): Promise<CartQuote | null> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const res = await fetch("/api/cart/quote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(toQuoteRequest(items)),
+        cache: "no-store",
+      });
+      if (res.ok) return (await res.json()) as CartQuote;
+    } catch {
+      // Network trouble: try again below.
+    }
+    if (cancelled() || attempt >= QUOTE_RETRY_DELAYS_MS.length) return null;
+    await new Promise((resolve) => setTimeout(resolve, QUOTE_RETRY_DELAYS_MS[attempt]));
+    if (cancelled()) return null;
+  }
+}
+
+/** The same products at the same quantities, in any order. */
+function sameItems(items: CartLine[], lines: CartLine[]): boolean {
+  return (
+    items.length === lines.length &&
+    items.every((item) => lines.some((l) => l.product_id === item.product_id && l.quantity === item.quantity))
+  );
 }
 
 /** The form values a stored request was built from, or null if it isn't one of ours. */
@@ -161,7 +196,16 @@ export function CheckoutForm() {
   const [stockWarning, setStockWarning] = useState<StockWarning | null>(null);
   const [awaiting, setAwaiting] = useState<Awaiting | null>(null);
   const [placed, setPlaced] = useState(false);
+  // The quote for the locked request's own items (not today's bag), once it arrives.
+  const [lockedQuote, setLockedQuote] = useState<{ for: SentRequest; quote: CartQuote | null } | null>(null);
   const locked = lockedRequest !== null;
+  const lockedSummary = lockedQuote !== null && lockedQuote.for === lockedRequest ? lockedQuote : null;
+
+  // The newest cart, for answers that arrive after a re-render (re-check runs).
+  const cartRef = useRef(cart);
+  useEffect(() => {
+    cartRef.current = cart;
+  });
 
   const inFlight = useRef(false);
   const lastSent = useRef<SentRequest | null>(null);
@@ -202,8 +246,26 @@ export function CheckoutForm() {
     hasSoldOut: cart.hasSoldOut,
     submitting,
     locked,
+    lockedQuoting: locked && lockedSummary === null,
   });
-  const stale = cart.quoting || cart.quoteFailed || (cart.quote !== null && !quoteDescribes(cart.lines, cart.quote));
+  const stale = locked
+    ? lockedSummary === null
+    : cart.quoting || cart.quoteFailed || (cart.quote !== null && !quoteDescribes(cart.lines, cart.quote));
+
+  // While locked, ask for a quote of exactly the request Pay will re-send, so the
+  // summary and the Pay label describe that request, not today's bag (which may have
+  // changed in another tab, or been cut because the earlier order holds the stock).
+  useEffect(() => {
+    if (lockedRequest === null) return;
+    let cancelled = false;
+    void (async () => {
+      const quote = await fetchQuote(lockedRequest.body.items, () => cancelled);
+      if (!cancelled) setLockedQuote({ for: lockedRequest, quote });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lockedRequest]);
 
   // --- what each answer does -------------------------------------------------------
 
@@ -221,14 +283,26 @@ export function CheckoutForm() {
     (outcome: Outcome, sent: SentRequest): void => {
       if (!mounted.current) return;
       switch (outcome.kind) {
-        case "paid":
+        case "paid": {
           // Stay "in flight": nothing more may be sent from this page.
           recheckRun.current += 1;
           clearAttempt(storage());
           setPlaced(true);
-          cart.clear();
+          // Empty the bag only of what was ordered. A retried earlier request may
+          // differ from today's bag (changed in another tab): those lines stay.
+          const lines = cartRef.current.lines;
+          if (sameItems(sent.body.items, lines)) {
+            cart.clear();
+          } else {
+            for (const item of sent.body.items) {
+              const line = lines.find((l) => l.product_id === item.product_id);
+              // The same line, or the same line cut because this order held the stock.
+              if (line !== undefined && line.quantity <= item.quantity) cart.remove(item.product_id);
+            }
+          }
           router.replace(`/orders/${outcome.token}`);
           return;
+        }
 
         case "declined":
           markDeclined(storage());
@@ -255,7 +329,7 @@ export function CheckoutForm() {
           // Nothing was made (the same key would have returned the order), so the
           // attempt is settled; the body changes, so the next Pay gets a new key.
           markSettled(storage());
-          const line = cart.quote?.lines.find((l) => l.product.id === outcome.product_id);
+          const line = cartRef.current.quote?.lines.find((l) => l.product.id === outcome.product_id);
           const item = sent.body.items.find((i) => i.product_id === outcome.product_id);
           setAwaiting(null);
           setLockedRequest(null);
@@ -480,6 +554,20 @@ export function CheckoutForm() {
     focusField("number");
   };
 
+  /**
+   * The owner's escape hatch, offered only for a locked attempt with no order named
+   * (no answer ever came back): forget it, unlock the form, and let the next Pay be
+   * a new attempt with a new key. The copy says plainly what that risks.
+   */
+  const startNewOrder = () => {
+    recheckRun.current += 1;
+    clearAttempt(storage());
+    lastSent.current = null;
+    setLockedRequest(null);
+    setMessage(null);
+    window.requestAnimationFrame(() => focusField("email"));
+  };
+
   const retryQuote = () => {
     // open() asks for a new quote when the last one failed; close() straight away so
     // the bag drawer never shows over the checkout.
@@ -516,19 +604,33 @@ export function CheckoutForm() {
     );
   }
 
-  // The total on Pay is only shown when it is the total of what Pay will send.
-  const payItems = lockedRequest?.body.items ?? cart.lines;
-  const total =
-    cart.quote !== null && !cart.quoting && quoteDescribes(payItems, cart.quote)
-      ? formatGBP(cart.quote.total)
+  // The summary and the total on Pay describe what Pay will send: while locked, the
+  // stored request (priced by its own quote, and only when that prices it exactly);
+  // otherwise today's bag.
+  const showRequest = lockedRequest !== null;
+  // Until the request's own quote arrives, today's bag quote stands in only if it
+  // prices exactly the same items (so the summary doesn't blink empty after a
+  // failure in this visit).
+  const interimQuote =
+    showRequest && cart.quote !== null && quoteMatchesExactly(lockedRequest.body.items, cart.quote)
+      ? cart.quote
       : null;
+  const summaryQuote = showRequest ? (lockedSummary?.quote ?? interimQuote) : cart.quote;
+  let total: string | null = null;
+  if (showRequest) {
+    const quote = lockedSummary?.quote ?? null;
+    if (quote !== null && quoteMatchesExactly(lockedRequest.body.items, quote)) total = formatGBP(quote.total);
+  } else if (cart.quote !== null && !cart.quoting && quoteDescribes(cart.lines, cart.quote)) {
+    total = formatGBP(cart.quote.total);
+  }
 
   return (
     <CheckoutShell>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-16">
         <div className="lg:sticky lg:top-[76px] lg:col-start-2 lg:row-start-1 lg:self-start">
           <OrderSummary
-            quote={cart.quote}
+            quote={summaryQuote}
+            request={showRequest ? lockedRequest.body.items : undefined}
             stale={stale}
             notices={cart.notices}
             stockWarning={stockWarning}
@@ -732,6 +834,24 @@ export function CheckoutForm() {
                     <p>{message.text}</p>
                     {message.detail && locked ? (
                       <p className="mt-1 text-footnote text-ink-2">{message.detail}</p>
+                    ) : null}
+                    {locked && awaiting === null ? (
+                      // No order was named, so there is nothing to view: offer a way out.
+                      <div className="mt-3 border-t border-danger/10 pt-3">
+                        <p className="text-footnote text-ink-2">
+                          If your earlier payment did go through, starting again could order twice.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={startNewOrder}
+                          disabled={submitting}
+                        >
+                          Start a new order
+                        </Button>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}

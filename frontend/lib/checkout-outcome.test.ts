@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { interpretCheckoutResponse, payBlocker, type PayState } from "./checkout-outcome";
+import {
+  interpretCheckoutResponse,
+  payBlocker,
+  quoteMatchesExactly,
+  type PayState,
+} from "./checkout-outcome";
 import type { CartQuote, Order } from "./types";
 
 function order(status: Order["status"]): Order {
@@ -168,5 +173,48 @@ describe("payBlocker", () => {
     expect(payBlocker({ ...locked, lines: [], quote: null })).toBeNull();
     expect(payBlocker({ ...locked, submitting: true })).toBe("submitting");
     expect(payBlocker({ ...locked, ready: false })).toBe("loading");
+    // ...but Pay waits for the quote of the locked request itself.
+    expect(payBlocker({ ...locked, lockedQuoting: true })).toBe("quoting");
+  });
+
+  it("a bag the quote cut on load can still pay (the provider doesn't re-quote a cut)", () => {
+    // Bag 50; only 4 can be sold. The provider sets the line to 4 and keeps this
+    // quote, which still says requested 50.
+    const cut = {
+      ...quote,
+      lines: [{ product: { id: 7 }, requested: 50, quantity: 4, limited: true, line_total: "596.00" }],
+    } as unknown as CartQuote;
+    expect(payBlocker({ ...ok, quote: cut, lines: [{ product_id: 7, quantity: 4 }] })).toBeNull();
+    // Still blocked for a bag the quote doesn't describe at all.
+    expect(payBlocker({ ...ok, quote: cut, lines: [{ product_id: 7, quantity: 3 }] })).toBe("quoting");
+  });
+});
+
+describe("quoteMatchesExactly", () => {
+  const line = (id: number, requested: number, quantity: number) => ({
+    product: { id },
+    requested,
+    quantity,
+    limited: quantity < requested,
+    line_total: "1.00",
+  });
+  const quoteOf = (lines: ReturnType<typeof line>[], removed: number[] = []) =>
+    ({ lines, removed, subtotal: "1.00", delivery: "0.00", total: "1.00", vat_included: "0.17" }) as unknown as CartQuote;
+  const items = [
+    { product_id: 7, quantity: 3 },
+    { product_id: 9, quantity: 1 },
+  ];
+
+  it("is true only when every item is quoted at exactly its quantity", () => {
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 3, 3), line(9, 1, 1)]))).toBe(true);
+  });
+
+  it("is false when the quote cut a line, dropped one, added one, or removed an id", () => {
+    // The earlier order holds the stock, so today only 1 of the 3 could be sold.
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 3, 1), line(9, 1, 1)]))).toBe(false);
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 3, 3)]))).toBe(false);
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 3, 3), line(9, 1, 1), line(4, 1, 1)]))).toBe(false);
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 3, 3), line(9, 1, 1)], [9]))).toBe(false);
+    expect(quoteMatchesExactly(items, quoteOf([line(7, 2, 3), line(9, 1, 1)]))).toBe(false);
   });
 });

@@ -81,6 +81,7 @@ export function interpretCheckoutResponse(status: number, body: unknown): Outcom
   return { kind: "retryable" };
 }
 
+
 export type PayState = {
   ready: boolean;
   lines: CartLine[];
@@ -91,28 +92,56 @@ export type PayState = {
   submitting: boolean;
   /**
    * An attempt with an unknown outcome is being retried: Pay re-sends that stored
-   * request as it is, so the current bag and quote don't apply.
+   * request as it is, so the current bag and its quote don't apply.
    */
   locked?: boolean;
+  /** Locked, and the quote for the stored request itself hasn't arrived yet. */
+  lockedQuoting?: boolean;
 };
 
 export type PayBlocker = "loading" | "empty" | "submitting" | "quote-failed" | "quoting" | "sold-out";
 
-/** True when the quote was made for exactly these lines (it may have cut quantities). */
+/**
+ * True when the quote was made for these lines. A line matches when it was asked
+ * for at that quantity, or when the quote cut it to that quantity: the provider
+ * applies a cut to the bag and keeps the quote that made it (whose `requested` is
+ * still the old quantity) rather than asking again.
+ */
 export function quoteDescribes(lines: CartLine[], quote: CartQuote): boolean {
   if (quote.lines.length !== lines.length) return false;
-  const requested = new Map(quote.lines.map((line) => [line.product.id, line.requested]));
-  return lines.every((line) => requested.get(line.product_id) === line.quantity);
+  const byId = new Map(quote.lines.map((line) => [line.product.id, line]));
+  return lines.every((line) => {
+    const quoted = byId.get(line.product_id);
+    return quoted !== undefined && (quoted.requested === line.quantity || quoted.quantity === line.quantity);
+  });
+}
+
+/**
+ * True when the quote prices exactly these items: every one quoted at exactly its
+ * quantity (nothing cut), nothing more, nothing removed. Only then is the quote's
+ * total the total of a request with these items.
+ */
+export function quoteMatchesExactly(items: CartLine[], quote: CartQuote): boolean {
+  if (quote.removed.length > 0 || quote.lines.length !== items.length) return false;
+  const byId = new Map(quote.lines.map((line) => [line.product.id, line]));
+  return items.every((item) => {
+    const quoted = byId.get(item.product_id);
+    return quoted !== undefined && quoted.requested === item.quantity && quoted.quantity === item.quantity;
+  });
 }
 
 /**
  * Why Pay can't be pressed right now, or null when it can. Pay is only offered for
  * a total the shopper has seen: the quote must be current and for these very lines.
- * The exception is a locked retry of an uncertain attempt (see PayState.locked).
+ * A locked retry re-sends the stored request, so it waits only for that request's
+ * own quote (see PayState.locked).
  */
 export function payBlocker(state: PayState): PayBlocker | null {
   if (!state.ready) return "loading";
-  if (state.locked) return state.submitting ? "submitting" : null;
+  if (state.locked) {
+    if (state.submitting) return "submitting";
+    return state.lockedQuoting ? "quoting" : null;
+  }
   if (state.lines.length === 0) return "empty";
   if (state.submitting) return "submitting";
   if (state.quoteFailed) return "quote-failed";

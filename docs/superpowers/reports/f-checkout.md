@@ -1,5 +1,62 @@
 # F4 Checkout: builder's report
 
+## Re-review fixes (one commit: "fix(frontend): F4 re-review fixes")
+
+**1. While locked, the summary and Pay describe the request Pay will re-send.**
+- **Locked view:**
+  - The form asks `/api/cart/quote` to quote exactly `lockedRequest.body.items`, retrying after 1 s, 2 s and 4 s.
+  - The summary shows that request under **"Finishing your earlier order"**, with each item at the quantity that was sent.
+  - A line's price, and the totals, appear only when that quote prices the request exactly: every item has `quantity === requested === sent quantity`, nothing is missing and nothing was removed. This is `quoteMatchesExactly` in `lib/checkout-outcome.ts`.
+  - Otherwise the summary reads "The total is confirmed when this payment goes through." This happens, for example, when the earlier order holds the stock and today's quote cuts the line from 3 to 1.
+  - `Pay £x` uses the same exact match, so it shows plain "Pay" otherwise.
+  - Pay stays disabled until that quote arrives (`PayState.lockedQuoting`).
+  - Today's bag quote is borrowed only as a placeholder, and only when it prices exactly the same items. This stops the summary blinking empty after a failure in the same visit.
+- **After `paid`:**
+  - The bag is cleared only when it holds exactly the items that were sent.
+  - Otherwise the page removes only lines of the products that were ordered, at no more than the ordered quantity. That covers the line cut by the order itself; any other line stays. For example, a new bag made in another tab survives.
+  - Handlers read the newest cart through a ref, so a re-check loop started before the bag loaded still sees the current bag.
+
+**2. A bag the quote cuts on load can be paid.**
+- `quoteDescribes` now accepts `requested === q || quantity === q`, the same rule F3's drawer uses.
+- The provider applies a cut and keeps the quote that made it, so `requested` stays at the old quantity. Under the old rule, Pay was disabled for good.
+
+**3. "Start a new order", the owner's escape hatch.**
+- **Where it appears:** only when an attempt is locked and no order was named (retryable, no token). It sits inside the retry message, under the line "If your earlier payment did go through, starting again could order twice."
+- **What it does:** it clears the stored attempt, unlocks the form (the details stay, now editable), clears the message and focuses Email. The next Pay builds from today's form and bag and gets a new key.
+- It never appears while waiting on a named order; that state has "View your order".
+
+**Tests.**
+- **Unit:** `a bag the quote cut on load can still pay`, two `quoteMatchesExactly` tests, and a locked-quote case in the `payBlocker` test.
+- **New e2e tests** (each counts `orders` and `payments` rows):
+  - `a bag emptied in another tab doesn't change the earlier order Pay finishes` (probe B)
+  - `a bag changed in another tab: Pay finishes the earlier order and keeps the new bag` (probe C)
+  - `start a new order unlocks the form, and the next Pay uses a new key`
+  - `a bag the quote cuts on load can still pay, at the cut total` (50 of LM-ARC-LAMP, cut to 5)
+- **Updated e2e test:** the reload-after-failure test now expects the summary to show the request (3), no total, Pay reading plain "Pay", and the cut line gone from the bag after payment.
+- **Awaiting test:** it now checks that "Start a new order" is absent.
+
+**E2E stability.** Each test that buys something now takes its own in-stock product, and the scenario products are left out. The suite places about 20 real orders, which used up the spotlight keyboard's seeded stock (seen as "Pay £0.00", sold out, on the 18th test).
+
+**Results:**
+
+| Command | Result |
+|---|---|
+| `npm test` | `Test Files 8 passed (8)`, `Tests 82 passed (82)` |
+| `npm run typecheck` | exit 0 |
+| `rm -rf playwright-report test-results && npm run lint` | exit 0 |
+| e2e on `commercelab_fco_e2e`, ports 8140/3140 | `18 passed (31.7s)`. Nothing skipped. Playwright stopped its servers (nothing listening on 8140, 3140 or 3141) |
+
+**Mutation checks** (each broken, seen red, restored; `grep MUTATION` finds nothing):
+
+| # | Mutation | Result |
+|---|---|---|
+| 6 | Show today's bag while locked (`showRequest` false) | The reload-after-failure test and probes B and C went red: no "Finishing your earlier order" summary. |
+| 6b | Keep the heading, but price the summary and Pay from today's bag | Probes B and C went red: the summary didn't show the earlier order's line (count 0 instead of 1). |
+| 7 | Always wipe the bag on `paid` | Probe C went red: the new bag was wiped. |
+| 8 | Revert the `quoteDescribes` rule to `requested === q` | Unit `a bag the quote cut on load can still pay` and e2e `a bag the quote cuts on load…` went red (Pay disabled). |
+
+**One interpretation to flag:** "at most remove those exact lines" became "remove a line of an ordered product only when its quantity is no more than what was ordered". That way the line this very order caused to be cut (3 → 1) leaves with it, while a line of any other product, or a larger quantity of the same product, stays.
+
 ## Review fixes (one commit: "fix(frontend): F4 review fixes")
 
 **1. An uncertain attempt now survives a reload or leaving the page (the money issue).**
