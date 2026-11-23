@@ -4,7 +4,7 @@ CommerceLab is a learning project: an e-commerce system for an invented
 computer, IT and office-equipment shop, built so it **feels completely real**.
 
 - **Backend:** Python FastAPI, with PostgreSQL as the single source of truth.
-- **Storefront:** Next.js, in `frontend/`. Being built now.
+- **Storefront:** Next.js, in `frontend/`. Built (phases 0 to 2 done); phase 3 is docs and the whole-branch review.
 - **Later:** analytics over the same database (DuckDB and pandas).
 
 The owner cares most about the design; the backend exists to give the design
@@ -20,7 +20,7 @@ real data.
 | `commercelab/api/` | HTTP only: `models.py` (the public contract), `routes/`, `errors.py` (exception → status) |
 | `scripts/` | `seed`, `reconcile`, and (Phase 0 onwards) `reset_db`, `export_openapi`, `fetch_images` |
 | `tests/` | Mirrors the packages. Shared rules in `tests/support/invariants.py`, builders in `tests/support/fakes.py` |
-| `frontend/` | The Next.js storefront (Phase 1 onwards) |
+| `frontend/` | The Next.js storefront: `app/` routes, `lib/` pure logic, `e2e/` Playwright tests |
 | `docs/architecture.md` | How the system works, as built. **Read before changing domain code** |
 | `docs/superpowers/specs/` | Approved designs: what to build and why |
 | `docs/superpowers/plans/` | Implementation plans, the execution arrangement, `frozen-paths.txt` |
@@ -34,6 +34,20 @@ uv run ruff check .                       # lint
 uv run python -m scripts.seed             # deterministic demo data (seed 42), APP_ENV=demo only
 uv run uvicorn commercelab.main:app --reload
 uv run python -m scripts.reconcile --dry-run
+uv run python -m scripts.fetch_images     # stock photos into .cache/images (before reset_db)
+uv run python -m scripts.reset_db         # dev/e2e database to seed 42; refuses unless demo and `commercelab` or `*_e2e`
+uv run python -m scripts.export_openapi   # after any api/models.py change; a test enforces it
+```
+
+Frontend, from `frontend/` (`npm ci`, with `--cache /tmp/<dir>` if the default cache errors):
+
+```bash
+npm run dev          # API_URL=http://127.0.0.1:8000 by default, server-side only
+npm test             # vitest unit tests
+npm run typecheck    # regenerates lib/api-types.ts, fails if it changed, then tsc
+npm run lint         # rm -rf playwright-report test-results first
+npm run e2e          # real backend and its own database; E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT for parallel runs
+npm run gen:api      # openapi.json -> lib/api-types.ts
 ```
 
 Tests use `commercelab_test`, which is created and rebuilt automatically. Its
@@ -106,8 +120,8 @@ main
 |---|---|---|
 | 0 | B0, the contract freeze | Local Docker |
 | 1 | B1–B6 backend streams, plus F0, the frontend contracts (merges last) | Local Docker, in parallel |
-| 2 | F1–F5 frontend screens | **Natively on the Mac**, 2 at a time (owner's decision; see below) |
-| 3 | B7 docs, then the whole-branch review; the owner merges into `main` | Local |
+| 2 | F1–F5 frontend screens | **Done.** Built natively on the Mac, 2 at a time (owner's decision; see below) |
+| 3 | B7 docs (written), then the whole-branch review; the owner merges into `main` | Local |
 
 **Native from Phase 2 (owner's decision, 2026-11-23):**
 - Build and test natively on the Mac: local PostgreSQL 17 and Node, at most 2 streams at a time.
