@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ContentPage, ContentSection } from "@/components/shell/content-page";
 
-export const metadata: Metadata = { title: "Privacy · CommerceLab" };
+export const metadata: Metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (

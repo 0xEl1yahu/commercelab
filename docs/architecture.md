@@ -100,7 +100,7 @@ All paths are inside `commercelab/` unless they start with `scripts/`.
 | `api/dependencies.py` | `Conn` and `Provider`: what routes receive. The shared demo payment provider. | `data.db`, `domain.payments` |
 | `api/errors.py` | Domain exception to HTTP status, in one table. | `domain` |
 | `api/models.py` | The public JSON contract. | Pydantic |
-| `domain/catalogue.py` | What the storefront may see: active products only, never `unit_cost` or the raw `available` count. Filtering, sorting, facets, collections, stock bands. Read-only. | `product_availability` view |
+| `domain/catalogue.py` | What the storefront may see: active products only, never `unit_cost`, and product responses show stock bands rather than the raw `available` count. Filtering, sorting, facets, collections, stock bands. Read-only. | `product_availability` view |
 | `domain/pricing.py` | `vat_included()`, the delivery constant, the penny rule. | |
 | `domain/cart.py` | `quote()`: prices a browser cart against the database. Read-only, reserves nothing. | `catalogue`, `pricing` |
 | `domain/customers.py` | `find_or_create` a customer by email; the `Contact` and `DeliveryAddress` shapes. | |
@@ -520,7 +520,7 @@ renders them.
 |---|---|---|
 | **VAT** | `pricing.vat_included` | Prices are tax-inclusive at 20%. VAT is read out of the gross, never added: `gross x 0.20 / 1.20`, which is gross divided by 6, rounded half up to the penny (119.00 gives 19.83, 417.00 gives 69.50). Shown as "Includes VAT" |
 | **Delivery** | `pricing.STANDARD_DELIVERY` | One option, free, on every quote and order |
-| **Stock bands** | `catalogue.stock_band` | 0 is `out_of_stock`, 1 to 5 is `low_stock` with `stock_left` set, 6 or more is `in_stock`. The raw `available` count never leaves the module, so the API can't leak it |
+| **Stock bands** | `catalogue.stock_band` | 0 is `out_of_stock`, 1 to 5 is `low_stock` with `stock_left` set, 6 or more is `in_stock`. Product responses carry only the band. The 409 stock error and the cart quote do reveal how many can be bought (up to 100), by design |
 | **Quote clamping** | `cart.quote` | Repeated ids merge (first-seen order). Each line's quantity is `min(requested, available, 100)`, 0 when sold out, with `limited: true` whenever it was reduced. Unknown and inactive ids go to `removed`. Nothing is reserved |
 | **Order reference** | `orders.order_reference` | `CL-%05d` of the order id. Shown to customers beside, never instead of, the token |
 | **Seed repricing** | `scripts/seed.py` | Five non-scenario products are raised 10% part-way through the simulated history, rounded to **whole pounds** like every catalogue price, so a shopper never sees an odd-pence price. Earlier order items keep the old price (the snapshot) |

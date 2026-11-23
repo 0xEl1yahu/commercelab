@@ -12,6 +12,8 @@ export async function GET(
   { params }: { params: Promise<{ key: string }> },
 ): Promise<Response> {
   const { key } = await params;
+  // A key is a sha256 hex digest; anything else can't exist, so skip the backend.
+  if (!/^[0-9a-f]{64}$/.test(key)) return new Response("Not found", { status: 404 });
   const headers = new Headers();
   const ifNoneMatch = request.headers.get("if-none-match");
   if (ifNoneMatch !== null) headers.set("if-none-match", ifNoneMatch);

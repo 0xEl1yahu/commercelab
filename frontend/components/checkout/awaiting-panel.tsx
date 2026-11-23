@@ -44,7 +44,7 @@ export function AwaitingPanel({ reference, token, exhausted, checking, onCheckAg
       </h2>
       <p className="mt-3 max-w-[52ch] text-callout text-ink-2">
         Your card provider hasn&apos;t replied yet. Your items are held for you while we check.
-        Don&apos;t pay again: this page updates on its own, and you won&apos;t be charged twice.
+        Don&apos;t pay again, and you won&apos;t be charged twice. We&apos;ll check a few times; after that you can check again.
       </p>
 
       {reference ? (

@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { ContentPage, ContentSection } from "@/components/shell/content-page";
 
-export const metadata: Metadata = { title: "Terms · CommerceLab" };
+export const metadata: Metadata = { title: "Terms" };
 
 export default function TermsPage() {
   return (
@@ -32,7 +32,7 @@ export default function TermsPage() {
         </p>
         <p>
           If a payment is declined, you haven&apos;t been charged and your bag is kept. If we can&apos;t yet confirm a
-          payment, your order page says so, and shows the result once the payment is confirmed.
+          payment, your order page says so. Write to us with your order reference and we&apos;ll confirm the outcome.
         </p>
         <p>We don&apos;t send confirmation emails. Keep the link to your order page to check on it later.</p>
       </ContentSection>

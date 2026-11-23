@@ -20,7 +20,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "CommerceLab",
+  title: { template: "%s · CommerceLab", default: "CommerceLab" },
   description: "Keyboards, mice, monitors, audio and desk kit for better work. Free UK delivery.",
 };
 

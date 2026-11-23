@@ -41,7 +41,7 @@ test.describe("product page", () => {
     const { spotlight } = await catalogueIds(request);
     await page.goto(`/p/${spotlight.slug}`);
 
-    await expect(page).toHaveTitle(`${SPOTLIGHT_NAME} — CommerceLab`);
+    await expect(page).toHaveTitle(`${SPOTLIGHT_NAME} · CommerceLab`);
     const buyBox = page.getByTestId("buy-box");
     await expect(buyBox.getByText("Halden", { exact: true })).toBeVisible();
     await expect(buyBox.getByRole("heading", { level: 1 })).toHaveText("Quill Low Profile Wireless Keyboard");

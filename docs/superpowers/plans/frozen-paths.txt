@@ -1,3 +1,4 @@
+# RETIRED: the storefront build is merged and nothing is frozen any more. Kept as a historical record.
 # Frozen paths for the storefront build. Written by B0 (Phase 0); F0 adds its own sections.
 #
 # [frozen]      No stream may change these. At merge, this must print nothing:

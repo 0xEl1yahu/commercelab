@@ -4,7 +4,7 @@ CommerceLab is a learning project: an e-commerce system for an invented
 computer, IT and office-equipment shop, built so it **feels completely real**.
 
 - **Backend:** Python FastAPI, with PostgreSQL as the single source of truth.
-- **Storefront:** Next.js, in `frontend/`. Built (phases 0 to 2 done); phase 3 is docs and the whole-branch review.
+- **Storefront:** Next.js, in `frontend/`. Built, on the `storefront` branch awaiting the owner's merge into `main`.
 - **Later:** analytics over the same database (DuckDB and pandas).
 
 The owner cares most about the design; the backend exists to give the design
@@ -16,14 +16,14 @@ real data.
 |---|---|
 | `commercelab/data/db.sql` | The whole schema. A dev script that drops and recreates every table |
 | `commercelab/data/db.py` | Connections and the pool |
-| `commercelab/domain/` | The rules: `catalogue`, `inventory`, `orders`, `payments`, plus (Phase 0 onwards) `pricing`, `cart`, `customers`, `images` |
+| `commercelab/domain/` | The rules: `catalogue`, `inventory`, `orders`, `payments`, plus `pricing`, `cart`, `customers`, `images` |
 | `commercelab/api/` | HTTP only: `models.py` (the public contract), `routes/`, `errors.py` (exception → status) |
-| `scripts/` | `seed`, `reconcile`, and (Phase 0 onwards) `reset_db`, `export_openapi`, `fetch_images` |
+| `scripts/` | `seed`, `reconcile`, `reset_db`, `export_openapi`, `fetch_images` |
 | `tests/` | Mirrors the packages. Shared rules in `tests/support/invariants.py`, builders in `tests/support/fakes.py` |
 | `frontend/` | The Next.js storefront: `app/` routes, `lib/` pure logic, `e2e/` Playwright tests |
 | `docs/architecture.md` | How the system works, as built. **Read before changing domain code** |
 | `docs/superpowers/specs/` | Approved designs: what to build and why |
-| `docs/superpowers/plans/` | Implementation plans, the execution arrangement, `frozen-paths.txt` |
+| `docs/superpowers/plans/` | Implementation plans, the execution record, `frozen-paths.txt` (retired) |
 
 ## Commands
 
@@ -45,7 +45,7 @@ Frontend, from `frontend/` (`npm ci`, with `--cache /tmp/<dir>` if the default c
 npm run dev          # API_URL=http://127.0.0.1:8000 by default, server-side only
 npm test             # vitest unit tests
 npm run typecheck    # regenerates lib/api-types.ts, fails if it changed, then tsc
-npm run lint         # rm -rf playwright-report test-results first
+npm run lint
 npm run e2e          # real backend and its own database; E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT for parallel runs
 npm run gen:api      # openapi.json -> lib/api-types.ts
 ```
@@ -62,7 +62,7 @@ name must end in `_test`. Settings come from the environment or `.env` (see
 
 **Data on the wire:**
 - **Money** is `NUMERIC(12,2)` in GBP, tax-inclusive. It is a `Decimal` in Python and a **string** in JSON.
-- **The public API exposes only customer-facing data.** Never `unit_cost` or a product's raw `available` count. Orders are reached only by their `public_token`.
+- **The public API exposes only customer-facing data.** Never `unit_cost`. Product responses show stock bands only, never the raw `available` count; the 409 stock error and the cart quote reveal how many can be bought (up to 100), by design. Orders are reached only by their `public_token`.
 
 **Transactions and concurrency:**
 - **The transaction rule.** Pooled connections run in autocommit. Domain functions take a `conn` and wrap their writes in `with conn.transaction():`. In tests, the `conn` fixture opens an outer `transaction(force_rollback=True)`, so those blocks become savepoints and nothing commits. See `docs/architecture.md` §3.
@@ -91,54 +91,18 @@ How the code is written:
 - **Race tests force the worst-case timing.** They wait on `pg_stat_activity` until the second connection shows `wait_event_type = 'Lock'`. They don't sleep.
 - **Shared invariants** (`assert_all_hold`) run after any test that changes stock, orders or payments.
 
-How to work as a stream:
-- **Honour `docs/superpowers/plans/frozen-paths.txt`:**
-  - `[frozen]` files stay unchanged.
-  - `[signatures]` files: change function bodies only.
-  - `[stubs]`: only the owning task implements them.
-- **A contract problem stops the stream.** Report it to the coordinator, who fixes it on `storefront`. Contracts are fixed at the source, never worked around.
-- **Tests marked `xfail(strict=True, reason="<task>")`** belong to that task. It rewrites them and removes the marker.
-
 What the owner decides:
-- **Approval points:** the spec, the plans, the Phase 0 freeze diff, the stock-photo contact sheet, and any merge into `main`.
+- **Approval points:** the spec, the plans, the stock-photo contact sheet, and any merge into `main`.
 - **Commits and pushes happen only when the owner asks.** Branch before committing on `main`. Agents never merge into `main`.
+- **A contract problem** (schema, `api/models.py`, `openapi.json`) is fixed at the source and never worked around.
 
-## How the storefront is being built and executed
+## History: how the storefront was built
 
-The source of truth is `docs/superpowers/plans/2026-11-21-storefront-execution.md`.
-**Read it before starting any storefront task.** The task definitions are in
-`2026-11-21-storefront-backend.md` (B0–B7) and
-`2026-11-21-storefront-frontend.md` (F0–F5).
-
-```
-main
- └─ storefront       integration branch: frozen contracts, then merged streams
-     └─ sf/<stream>  one branch and git worktree per stream
-```
-
-| Phase | Work | Where it runs |
-|---|---|---|
-| 0 | B0, the contract freeze | Local Docker |
-| 1 | B1–B6 backend streams, plus F0, the frontend contracts (merges last) | Local Docker, in parallel |
-| 2 | F1–F5 frontend screens | **Done.** Built natively on the Mac, 2 at a time (owner's decision; see below) |
-| 3 | B7 docs (written), then the whole-branch review; the owner merges into `main` | Local |
-
-**Native from Phase 2 (owner's decision, 2026-11-23):**
-- Build and test natively on the Mac: local PostgreSQL 17 and Node, at most 2 streams at a time.
-- Each stream has its own e2e database and ports, set through `E2E_DATABASE_URL`, `E2E_API_PORT` and `E2E_WEB_PORT` (and `TEST_DATABASE_URL` for pytest).
-- Containerising the finished app comes later, as its own piece of work.
-- Per-stream Docker sandboxes are not used any more. Docker's disk on the external drive failed under load.
-
-**Phases 0–1 used hybrid sandboxes:**
-- **Local streams** run in Docker containers with memory limits:
-  - backend: 1 GB and 1 CPU
-  - F0: 3 GB and 2 CPUs
-  - the integration container `cl-storefront`: 4 GB
-
-  Each has its own PostgreSQL, so default database names and ports are safe. Agents edit the worktree on the Mac and run every command with `docker exec cl-<stream> …`. The image and runner are in `dev/sandbox/` (Phase 0 onwards).
-- **Cloud streams** each get their own VM. They clone a pushed branch and report back by pushing to it, and the coordinator reviews and gates them locally.
-
-**Model and effort follow the stakes.** Opus at high effort builds and reviews the contract freeze and both checkouts, because a mistake there costs money or misleads every stream. Most feature work runs on Sonnet. Mechanical work runs on Haiku. The full table is in the execution doc, §5.
+The storefront was built in phases by parallel streams on `sf/<stream>` branches
+under the `storefront` integration branch, with frozen contracts, per-stream
+sandboxes, then native builds. None of that applies any more: the build is
+merged and nothing is frozen. The full account is in
+`docs/superpowers/plans/2026-11-21-storefront-execution.md`.
 
 ## Conventions
 

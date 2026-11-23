@@ -7,8 +7,10 @@ rolled back afterwards.
 Rules this module owns:
   - the storefront only ever sees active products
   - unit_cost (internal margin data) is never selected
-  - stock is shown as a band (in stock / only N left / out of stock), never as
-    the raw available count: stock_band() is the one place that decides it
+  - product responses show stock as a band (in stock / only N left / out of
+    stock), never the raw available count: stock_band() is the one place that
+    decides it. (The 409 stock error and the cart quote do reveal how many can
+    be bought, up to 100, by design.)
 
 Rules it does NOT own:
   - what "available" means: that is the product_availability view in db.sql,

@@ -46,7 +46,7 @@ test("confirmation shows reference, lines, VAT and address", async ({ page, requ
   await expect(main.getByTestId("order-delivery")).toContainText("Free");
   await expect(main.getByTestId("order-total")).toContainText("Total paid");
   await expect(main.getByTestId("order-total")).toContainText(formatGBP(order.total));
-  await expect(main.getByTestId("order-vat")).toContainText(`Includes VAT ${formatGBP(order.vat_included)}`);
+  await expect(main.getByTestId("order-vat")).toContainText(`Includes ${formatGBP(order.vat_included)} VAT`);
 
   const address = main.getByTestId("order-address");
   await expect(address).toContainText("Delivering to");

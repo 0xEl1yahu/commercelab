@@ -7,7 +7,7 @@ import { formatGBP } from "@/lib/money";
 import type { Order } from "@/lib/types";
 
 export const metadata: Metadata = {
-  title: "Your order · CommerceLab",
+  title: "Your order",
   robots: { index: false },
 };
 
@@ -106,7 +106,7 @@ function Paid({ order }: { order: Order }) {
           <dt>Total paid</dt> <dd className="tabular-nums">{formatGBP(order.total)}</dd>
         </div>
         <div data-testid="order-vat" className="flex justify-between gap-4 text-footnote text-muted">
-          <dt>Includes VAT</dt> <dd className="tabular-nums">{formatGBP(order.vat_included)}</dd>
+          <dt>Includes {formatGBP(order.vat_included)} VAT</dt>
         </div>
       </dl>
 
@@ -150,8 +150,8 @@ function Pending({ order }: { order: Order }) {
       <header>
         <h1 className="headline text-title-2 md:text-title-1">We&apos;re confirming your payment.</h1>
         <p className="mt-4 text-body text-muted text-pretty">
-          Don&apos;t pay again. Your order is saved under the reference below. Check this page again in a few
-          minutes.
+          Don&apos;t pay again. If this page still says we&apos;re confirming your payment, write to
+          hello@commercelab.example with the reference below.
         </p>
       </header>
       <Reference reference={order.reference} />

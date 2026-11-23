@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await loadProduct(slug);
   return {
-    title: `${product.brand} ${product.name} — CommerceLab`,
+    title: `${product.brand} ${product.name}`,
     description: product.tagline,
   };
 }

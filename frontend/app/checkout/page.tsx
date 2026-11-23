@@ -6,7 +6,7 @@ import { CheckoutForm } from "@/components/checkout/checkout-form";
 // /checkout), so the page renders only its content. Everything on it depends on
 // the bag in localStorage, so CheckoutForm renders in the browser.
 export const metadata: Metadata = {
-  title: "Checkout – CommerceLab",
+  title: "Checkout",
   robots: { index: false, follow: false },
 };
 

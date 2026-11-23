@@ -61,7 +61,7 @@ uv run ruff check .
 # Frontend (from frontend/)
 npm test                  # unit tests (vitest)
 npm run typecheck         # regenerates lib/api-types.ts, fails if it changed, then tsc
-npm run lint              # delete playwright-report/ and test-results/ first, or eslint trips on them
+npm run lint
 npm run e2e               # Playwright against the real backend; builds the app first (slow)
 ```
 

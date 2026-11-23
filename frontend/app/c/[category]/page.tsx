@@ -31,7 +31,7 @@ async function findCategory(slug: string): Promise<Category> {
 
 export async function generateMetadata({ params }: Pick<PageProps, "params">): Promise<Metadata> {
   const category = await findCategory((await params).category);
-  return { title: `${category.title} | CommerceLab`, description: category.description };
+  return { title: category.title, description: category.description };
 }
 
 /**

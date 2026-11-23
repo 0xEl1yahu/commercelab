@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ContentPage, ContentSection } from "@/components/shell/content-page";
 
-export const metadata: Metadata = { title: "Delivery & returns · CommerceLab" };
+export const metadata: Metadata = { title: "Delivery & returns" };
 
 export default function DeliveryReturnsPage() {
   return (

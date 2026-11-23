@@ -259,14 +259,14 @@ function BagLine({
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            <p className="text-caption text-muted">{product.brand}</p>
             <Link
               href={href}
               onClick={onNavigate}
-              className="block text-callout leading-snug font-semibold tracking-[-0.01em] text-ink text-pretty hover:underline hover:decoration-ink/30 hover:underline-offset-4"
+              className="mt-0.5 block text-callout leading-snug font-semibold tracking-[-0.01em] text-ink text-pretty hover:underline hover:decoration-ink/30 hover:underline-offset-4"
             >
               {product.name}
             </Link>
-            <p className="mt-0.5 text-caption text-muted">{product.brand}</p>
           </div>
           {soldOut ? null : (
             <p className="shrink-0 text-callout tabular-nums text-ink">{formatGBP(line.line_total)}</p>
