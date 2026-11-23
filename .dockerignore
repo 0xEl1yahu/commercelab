@@ -1,0 +1,8 @@
+**
+!pyproject.toml
+!uv.lock
+!commercelab/
+!commercelab/**/*.py
+!scripts/
+!scripts/__init__.py
+!scripts/check_shop_schema.py

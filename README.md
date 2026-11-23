@@ -17,11 +17,11 @@ The application should support:
 
 ## Status
 
-The backend and the Next.js storefront are built (branch `storefront`): catalogue,
+The backend and the Next.js storefront are built: catalogue,
 bag, one-page guest checkout with retry-safe payment, order page. Analytics
 (DuckDB, pandas) comes later. How it works: [`docs/architecture.md`](docs/architecture.md).
 
-## Running it on a Mac
+## Running it natively on a Mac
 
 **You need:** PostgreSQL 17 running locally, [uv](https://docs.astral.sh/uv/), and Node (with npm).
 
@@ -50,6 +50,81 @@ Settings come from the environment or `.env` (see `.env.example`). One is worth
 knowing: `SIMULATED_DECLINE_PERCENT` (default 5) is the share of payments the
 demo payment provider declines, so you can see the declined-card flow. Set it to
 `0` for a run with no surprises (the e2e tests do).
+
+## Running the existing shop in Docker
+
+After the one-time transfer below, run `docker compose up` from the repo root.
+Open http://localhost:3000 for the shop or http://localhost:8000/docs for the API.
+Use Ctrl-C or `docker compose down` to stop. Keep using the same Compose project
+name so it reattaches the same database volume. **`docker compose down -v` deletes this copy of the shop.** If a host port is occupied, stop the native
+server or set `WEB_HOST_PORT` and `API_HOST_PORT` in your local environment.
+
+### First transfer from native PostgreSQL 17
+
+Start Docker Desktop. Press Ctrl-C in the terminals running the native
+storefront and API. Stop other shop writers, including reconciliation. Keep native PostgreSQL running until verification is
+complete. Use PostgreSQL 17 client tools on the Mac. These commands assume the
+native database is `postgresql://localhost/commercelab`; set `SHOP_SOURCE_DSN`
+if yours differs.
+
+Set `COMMERCE_DB_PASSWORD` once in your gitignored root `.env`. To add a random
+value without displaying it, run this from the repository root.
+
+```bash
+(umask 077
+ if ! grep -qs '^COMMERCE_DB_PASSWORD=.' .env; then
+   printf '\nCOMMERCE_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
+ fi)
+```
+
+Keep this value with the volume. PostgreSQL uses it to create the account on
+first initialisation. The transfer below creates a private backup directory
+under your home directory. It aborts on an occupied target or a verification
+difference. Leave the native writers stopped until the comparison succeeds.
+
+```bash
+(
+  set -eu
+  umask 077
+  source_dsn=${SHOP_SOURCE_DSN:-postgresql://localhost/commercelab}
+  backup_dir=$(mktemp -d "$HOME/commercelab-transfer.XXXXXXXX")
+  echo "Local backup directory: $backup_dir"
+  pg_dump --format=custom --file="$backup_dir/shop.dump" --dbname="$source_dsn"
+  docker compose up -d --wait db
+  db_exec() { docker compose exec -T db "$@"; }
+  target_sql() { db_exec psql -X -v ON_ERROR_STOP=1 -U commercelab -d commercelab "$@"; }
+  objects=$(target_sql -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n
+    ON n.oid=c.relnamespace WHERE n.nspname='public'")
+  if [ "$objects" != 0 ]; then
+    echo "Restore stopped: the target already contains relations." >&2
+    exit 1
+  fi
+  db_exec pg_restore -U commercelab -d commercelab --single-transaction \
+    --exit-on-error --no-owner --no-acl < "$backup_dir/shop.dump"
+
+  cat > "$backup_dir/verify.sql" <<'SQL'
+SELECT (SELECT count(*) FROM products), (SELECT count(*) FROM orders),
+       (SELECT count(*) FROM images);
+SELECT status, count(*), sum(total) FROM orders GROUP BY status ORDER BY status COLLATE "C";
+SELECT product_id, on_hand, reserved, available FROM product_availability ORDER BY product_id;
+SELECT sha256, encode(sha256(data), 'hex') FROM images ORDER BY sha256 COLLATE "C";
+SQL
+  psql -X -v ON_ERROR_STOP=1 -At -d "$source_dsn" < "$backup_dir/verify.sql" > "$backup_dir/native"
+  target_sql -At < "$backup_dir/verify.sql" > "$backup_dir/docker"
+  cmp "$backup_dir/native" "$backup_dir/docker"
+  echo "Verified the transfer. Start the shop with docker compose up."
+)
+```
+
+After cutover, new orders and stock changes go to Docker. Retain the original
+database and dump. If startup reports missing relations, check the selected
+project and volume, then inspect the transfer result. A complete schema with
+zero products starts normally.
+
+Run `scripts/compose_smoke.sh` to rehearse a transfer, place an order and test
+restart persistence on a disposable project using synthetic data and separate
+ports. Docker disk I/O errors on the external drive require stopping the run
+and checking the drive before retrying.
 
 ## Tests and checks
 

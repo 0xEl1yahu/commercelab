@@ -6,6 +6,7 @@ import type { NextConfig } from "next";
 // boundary. With the previous model a no-store fetch simply makes the route dynamic,
 // and a failed read reaches app/error.tsx with a 500.
 const nextConfig: NextConfig = {
+  output: process.env.CONTAINER_BUILD === "1" ? "standalone" : undefined,
   // Product photos are served already sized from /media/[key]; next/image is used
   // with `unoptimized`, so no image optimiser or remote patterns are needed.
   images: { unoptimized: true },

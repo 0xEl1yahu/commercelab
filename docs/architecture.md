@@ -704,7 +704,7 @@ order. Declined and pending outcomes are mocked on the first response only.
 | Storefront alongside or after core order logic: open | After | Build the UI against a stable API |
 | `POST /checkout` takes `customer_id`, and `GET /orders/{id}` reads an order | Guest checkout (`contact` + `address`) and `GET /orders/{token}`; the numeric route is gone | The storefront has no accounts, and a numeric route lets anyone browse orders |
 | Images as files or an object store | Bytes in PostgreSQL, keyed by sha256 | One source of truth; the key proves the bytes, so they cache forever |
-| Phases 0 to 1 in Docker sandboxes; later phases in cloud sessions | Phases 0 to 1 in Docker; the frontend streams were built natively on the Mac | The Docker disk failed under load and the cloud route couldn't be launched. Containerising the finished app is later, separate work |
+| Phases 0 to 1 in Docker sandboxes; later phases in cloud sessions | Phases 0 to 1 in Docker; the frontend streams were built natively on the Mac | The Docker disk failed under load and the cloud route couldn't be launched. The finished app is packaged separately with Compose |
 | Analytics outbox and checkpoint tables in the initial schema | Deferred | The checkpoint design needs its own discussion; it doesn't block checkout |
 
 ---
@@ -716,9 +716,26 @@ order. Declined and pending outcomes are mocked on the first response only.
 - **Scheduling reconciliation.** `scripts/reconcile.py` must be run by hand or
   from cron; nothing runs it automatically.
 - **Customer accounts, order history and search** in the storefront.
-- **Containerising** the finished app (`dev/sandbox/` is the retired per-stream sandbox, unused).
 - **Analytics** (Phase 3): metric definitions, pandas reports, Matplotlib
   charts, DuckDB, incremental sync.
 - **Migrations.** `commercelab/data/db.sql` drops and recreates everything; versioned
   migrations are needed before any data must survive a schema change.
 - **Authentication, a real payment provider, tax and shipping** (Phase 5).
+
+## 12. Local Compose runtime
+
+`compose.yaml` packages the native request path as three services. The browser
+uses Next.js on loopback port 3000. The Next.js standalone server calls
+`http://api:8000`; FastAPI also publishes port 8000 on loopback for direct use.
+Only the API connects to `db:5432`. PostgreSQL stores the shop and its photos
+on the project's named volume. The retired development sandbox plays no role.
+
+PostgreSQL readiness gates the API's read-only schema preflight. Missing tables
+or the availability view stop startup and produce restore guidance. Once
+Uvicorn serves `/health`, Compose starts the web service. Database preparation
+happens once, through the [verified transfer procedure](../README.md#first-transfer-from-native-postgresql-17).
+An ordinary stop or container recreation reuses the restored database.
+
+Each service has a one-CPU runtime limit. PostgreSQL has 1 GiB of memory,
+and FastAPI and Next.js each have 512 MiB. The smoke script samples actual
+usage after checkout and reopens the same purchased order after recreation.
