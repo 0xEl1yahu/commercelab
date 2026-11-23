@@ -1,5 +1,75 @@
 # F4 Checkout: builder's report
 
+## Review fixes (one commit: "fix(frontend): F4 review fixes")
+
+**1. An uncertain attempt now survives a reload or leaving the page (the money issue).**
+- `lib/checkout-attempt.ts` has three new functions:
+  - `markUncertain(storage, { token?, reference? })`
+  - `markSettled(storage)`, which marks a stock or invalid answer: nothing was created, so the key is kept for the same body.
+  - `uncertainAttempt(storage)`, which returns `{ key, body, token?, reference? } | null`.
+- The body is read back from the stored fingerprint, which is the full request body.
+- When each mark is set or cleared:
+
+  | Outcome | What happens to the stored attempt |
+  |---|---|
+  | `retryable`, `awaiting` | marked uncertain |
+  | `paid`, `conflict` | cleared |
+  | `declined` | marked declined |
+  | `stock`, `invalid` | marked settled |
+- **On mount** (`checkout-form.tsx`), if an uncertain attempt exists:
+  - the page sets `lastSent` and `lockedRequest` to it;
+  - it pre-fills and locks contact and address from the stored body;
+  - it shows the AwaitingPanel (and resumes the 2/4/8 s re-checks) when a token is known, or the retry message when not.
+- **While locked**, `pay()` re-sends `lockedRequest` exactly as it was, never one rebuilt from the form and bag. Only the card fields are checked, because they aren't stored.
+- `payBlocker` gains `locked`: while locked only an in-flight request blocks Pay, because the reload's re-quote may have cut the bag. Pay shows `Pay £x` only when the quote describes the locked items, and plain "Pay" otherwise.
+- If the bag is empty but an attempt is locked, the page still shows the locked attempt rather than the empty state.
+- The re-check schedule moved to `lib/checkout-recheck.ts` (`recheckUntilKnown`, `stillUnknown`, `RECHECK_DELAYS_MS`) so it can be tested with fake timers.
+
+**2. Focus no longer drops to `<body>` after an outcome.**
+- The awaiting heading has `tabIndex={-1}` and takes focus when the panel appears, which also announces the panel.
+- After `retryable`, `stock`, `conflict` or a field-less `invalid`, focus moves to the message, which has `tabIndex={-1}` and `role="alert"`.
+- After `declined`, focus moves to the declined panel.
+
+**3. The comment in `checkout-attempt.ts` now says it plainly.** The stored fingerprint is the full request body (contact, delivery address, bag lines), never card data, and is scoped to the tab through sessionStorage.
+
+**4. Contrast.** The struck-through old quantity is now `text-muted`, without the `/80` opacity.
+
+**5. New tests.**
+- **Unit:**
+  - `recheck: rechecks exhausted → Check again now` (fake timers: re-sends at 2 s, 6 s and 14 s, then nothing more)
+  - `awaiting → declined on recheck`
+  - a network failure while waiting keeps waiting
+  - stopping when the run is no longer active
+  - five uncertain-attempt tests
+  - the `payBlocker` locked rule
+- **E2E:**
+  - `reload after a network failure restores the locked details and re-sends the same key`. This replaces the earlier reload test. The bag is 3 of a 4-unit product, so the reload's re-quote cuts it to 1, which is the coordinator's scenario.
+  - `reload during an unconfirmed payment keeps checking the same key`. The real order is placed, and the page is told it is pending.
+  - The awaiting test now counts `orders` and `payments` rows.
+  - Focus assertions on the retry message, the declined panel and the awaiting heading.
+
+**Results after the fix:**
+
+| Command | Result |
+|---|---|
+| `npm test` | `Test Files 8 passed (8)`, `Tests 79 passed (79)` |
+| `npm run typecheck` | exit 0 |
+| `rm -rf playwright-report test-results && npm run lint` | exit 0 |
+| e2e on `commercelab_fco_e2e`, ports 8140/3140 | `14 passed (24.5s)`. Nothing skipped. Playwright stopped its servers afterwards (nothing listening on 8140, 3140 or 3141) |
+
+**New mutation checks** (each broken, seen red, restored; `grep MUTATION` finds nothing):
+
+| # | Mutation | Result |
+|---|---|---|
+| 4 | While locked, `pay()` rebuilds the body from the form and bag instead of re-sending `lockedRequest`. This is the one the review asked for. | `reload after a network failure…` went red. The page landed on a **second order** with quantity 1 instead of the original 3: a new body, a new key, a second charge. |
+| 5 | No restore on mount: `uncertainAttempt` is ignored. | Both reload tests went red: no locked retry message, and no awaiting panel after the reload. |
+
+**Remaining risk.** Shrunk, but not gone:
+- Storage is per tab, so an uncertain attempt in one tab is not seen by another tab.
+- If sessionStorage is blocked, the lock lives only in memory, so a reload loses it.
+
+The earlier case (a reload, then different details) is now closed, because after a reload the details are locked to the stored request.
+
 Stream `f-checkout`. The checkout lives at `/checkout`. Built and tested natively on the owner's Mac, because the owner decided to drop Docker after the container's disk failed twice.
 
 ## Commits

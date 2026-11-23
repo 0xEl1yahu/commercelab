@@ -6,7 +6,10 @@ import {
   clearAttempt,
   fingerprint,
   markDeclined,
+  markSettled,
+  markUncertain,
   memoryStorage,
+  uncertainAttempt,
   type AttemptStorage,
 } from "./checkout-attempt";
 
@@ -111,5 +114,71 @@ describe("attemptKey", () => {
     expect(attemptKey(broken, fingerprint(BODY))).toMatch(UUID);
     expect(() => markDeclined(broken)).not.toThrow();
     expect(() => clearAttempt(broken)).not.toThrow();
+    expect(() => markUncertain(broken, {})).not.toThrow();
+    expect(() => markSettled(broken)).not.toThrow();
+    expect(uncertainAttempt(broken)).toBeNull();
+  });
+});
+
+describe("uncertain attempts", () => {
+  it("an uncertain attempt gives back its key and the exact body it sent", () => {
+    const storage = memoryStorage();
+    const key = attemptKey(storage, fingerprint(BODY));
+    expect(uncertainAttempt(storage)).toBeNull();
+
+    markUncertain(storage, {});
+    expect(uncertainAttempt(storage)).toEqual({ key, body: BODY });
+    // Re-sending that body after a reload gives the same fingerprint, so the same key.
+    expect(attemptKey(storage, fingerprint(uncertainAttempt(storage)!.body))).toBe(key);
+  });
+
+  it("remembers the pending order's token and reference, and keeps them on a later retryable", () => {
+    const storage = memoryStorage();
+    const key = attemptKey(storage, fingerprint(BODY));
+    markUncertain(storage, { token: "tok_abc", reference: "CL-01501" });
+    markUncertain(storage, {});
+    expect(uncertainAttempt(storage)).toEqual({ key, body: BODY, token: "tok_abc", reference: "CL-01501" });
+  });
+
+  it("survives a reload: it is read back from the tab's storage", () => {
+    const backing = new Map<string, string>();
+    const tab = (): AttemptStorage => ({
+      getItem: (k) => backing.get(k) ?? null,
+      setItem: (k, v) => void backing.set(k, v),
+      removeItem: (k) => void backing.delete(k),
+    });
+    const key = attemptKey(tab(), fingerprint(BODY));
+    markUncertain(tab(), { token: "tok_abc" });
+    expect(uncertainAttempt(tab())).toMatchObject({ key, body: BODY, token: "tok_abc" });
+  });
+
+  it("is resolved by a known outcome", () => {
+    // declined
+    let storage = memoryStorage();
+    attemptKey(storage, fingerprint(BODY));
+    markUncertain(storage, {});
+    markDeclined(storage);
+    expect(uncertainAttempt(storage)).toBeNull();
+
+    // stock or invalid: nothing was created, the key may be reused for the same body
+    storage = memoryStorage();
+    const key = attemptKey(storage, fingerprint(BODY));
+    markUncertain(storage, {});
+    markSettled(storage);
+    expect(uncertainAttempt(storage)).toBeNull();
+    expect(attemptKey(storage, fingerprint(BODY))).toBe(key);
+
+    // paid or conflict
+    storage = memoryStorage();
+    attemptKey(storage, fingerprint(BODY));
+    markUncertain(storage, {});
+    clearAttempt(storage);
+    expect(uncertainAttempt(storage)).toBeNull();
+  });
+
+  it("does nothing without a stored attempt", () => {
+    const storage = memoryStorage();
+    markUncertain(storage, { token: "tok" });
+    expect(uncertainAttempt(storage)).toBeNull();
   });
 });

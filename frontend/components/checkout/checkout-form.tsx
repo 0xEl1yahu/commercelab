@@ -9,8 +9,10 @@
 // - Each request carries the attempt key for its exact body (lib/checkout-attempt):
 //   the same body reuses the key (a retry, a reload), a declined one gets a new key.
 // - While an outcome is uncertain (no answer, or the provider hasn't replied), the
-//   contact and address fields are locked, so pressing Pay again sends the same body
-//   with the same key and can't create a second order.
+//   attempt is locked: contact and address are read-only, and Pay re-sends the stored
+//   request exactly as it was, with its key, never one rebuilt from today's form and
+//   bag. The lock is kept in the tab's storage, so a reload or a visit elsewhere
+//   comes back to the same locked attempt (and resumes checking a pending order).
 // - Card fields are validated here and never sent: they have no `name`, and the
 //   request body is built by toCheckoutRequest, which copies named fields only.
 
@@ -36,9 +38,18 @@ import {
   clearAttempt,
   fingerprint,
   markDeclined,
+  markSettled,
+  markUncertain,
+  uncertainAttempt,
   type AttemptStorage,
 } from "@/lib/checkout-attempt";
-import { interpretCheckoutResponse, payBlocker, type Outcome } from "@/lib/checkout-outcome";
+import {
+  interpretCheckoutResponse,
+  payBlocker,
+  quoteDescribes,
+  type Outcome,
+} from "@/lib/checkout-outcome";
+import { recheckUntilKnown, stillUnknown } from "@/lib/checkout-recheck";
 import {
   EMPTY_CARD_FORM,
   EMPTY_CHECKOUT_FORM,
@@ -59,7 +70,7 @@ import { formatGBP } from "@/lib/money";
 import type { CheckoutRequest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-import { AWAITING_RECHECK_DELAYS_MS, AwaitingPanel } from "./awaiting-panel";
+import { AwaitingPanel } from "./awaiting-panel";
 import { OrderSummary, type StockWarning } from "./order-summary";
 
 type Message = { tone: "danger" | "notice"; text: string; detail?: string };
@@ -76,6 +87,8 @@ const MESSAGES = {
   unavailable: "An item in your bag is no longer sold. Reload the page to update your bag.",
   checkDetails: "Please check your details and try again.",
 } as const;
+
+const CARD_FIELDS: CheckoutField[] = ["number", "expiry", "securityCode"];
 
 /** Sends one checkout request. Never throws: a network failure is status 0. */
 async function postCheckout({ body, key }: SentRequest): Promise<Outcome> {
@@ -100,6 +113,28 @@ async function postCheckout({ body, key }: SentRequest): Promise<Outcome> {
   return interpretCheckoutResponse(status, json);
 }
 
+/** The form values a stored request was built from, or null if it isn't one of ours. */
+function formFromBody(body: unknown): CheckoutFormValues | null {
+  if (body === null || typeof body !== "object") return null;
+  const { contact, address, items } = body as Record<string, unknown>;
+  if (!contact || typeof contact !== "object" || !address || typeof address !== "object") return null;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const c = contact as Record<string, unknown>;
+  const a = address as Record<string, unknown>;
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return {
+    email: text(c.email),
+    name: text(c.name),
+    phone: text(c.phone),
+    company: text(a.company),
+    vat_number: text(a.vat_number),
+    line1: text(a.line1),
+    line2: text(a.line2),
+    city: text(a.city),
+    postcode: text(a.postcode),
+  };
+}
+
 const inputId = (field: CheckoutField | "country") => `checkout-${field}`;
 
 function focusField(field: CheckoutField): void {
@@ -121,24 +156,37 @@ export function CheckoutForm() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [declined, setDeclined] = useState(false);
-  const [locked, setLocked] = useState(false);
+  // The uncertain attempt Pay must re-send as it is; null when nothing is locked.
+  const [lockedRequest, setLockedRequest] = useState<SentRequest | null>(null);
   const [stockWarning, setStockWarning] = useState<StockWarning | null>(null);
   const [awaiting, setAwaiting] = useState<Awaiting | null>(null);
   const [placed, setPlaced] = useState(false);
+  const locked = lockedRequest !== null;
 
   const inFlight = useRef(false);
   const lastSent = useRef<SentRequest | null>(null);
   const storageRef = useRef<AttemptStorage | null>(null);
-  const recheckTimer = useRef<number | undefined>(undefined);
   const mounted = useRef(true);
+  const recheckRun = useRef(0); // bumped to stop an older automatic re-check run
+  const resumed = useRef(false);
+  const pendingFocus = useRef<"message" | "declined" | null>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+  const declinedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      window.clearTimeout(recheckTimer.current);
     };
   }, []);
+
+  // After an outcome, move focus to what it says (so it isn't left on <body>).
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (target === null) return;
+    pendingFocus.current = null;
+    (target === "declined" ? declinedRef : messageRef).current?.focus();
+  });
 
   const storage = useCallback((): AttemptStorage => {
     storageRef.current ??= attemptStorage();
@@ -153,8 +201,9 @@ export function CheckoutForm() {
     quoteFailed: cart.quoteFailed,
     hasSoldOut: cart.hasSoldOut,
     submitting,
+    locked,
   });
-  const stale = blocker === "quoting" || blocker === "quote-failed";
+  const stale = cart.quoting || cart.quoteFailed || (cart.quote !== null && !quoteDescribes(cart.lines, cart.quote));
 
   // --- what each answer does -------------------------------------------------------
 
@@ -163,12 +212,18 @@ export function CheckoutForm() {
     setSubmitting(false);
   }, []);
 
+  const lock = useCallback((sent: SentRequest) => {
+    lastSent.current = sent;
+    setLockedRequest(sent);
+  }, []);
+
   const handleOutcome = useCallback(
     (outcome: Outcome, sent: SentRequest): void => {
       if (!mounted.current) return;
       switch (outcome.kind) {
         case "paid":
           // Stay "in flight": nothing more may be sent from this page.
+          recheckRun.current += 1;
           clearAttempt(storage());
           setPlaced(true);
           cart.clear();
@@ -178,13 +233,15 @@ export function CheckoutForm() {
         case "declined":
           markDeclined(storage());
           setAwaiting(null);
-          setLocked(false);
+          setLockedRequest(null);
           setDeclined(true);
+          pendingFocus.current = "declined";
           settle();
           return;
 
         case "awaiting":
-          setLocked(true);
+          markUncertain(storage(), { token: outcome.token, reference: outcome.reference });
+          lock(sent);
           setAwaiting((current) => ({
             token: outcome.token,
             reference: outcome.reference,
@@ -195,10 +252,13 @@ export function CheckoutForm() {
           return;
 
         case "stock": {
+          // Nothing was made (the same key would have returned the order), so the
+          // attempt is settled; the body changes, so the next Pay gets a new key.
+          markSettled(storage());
           const line = cart.quote?.lines.find((l) => l.product.id === outcome.product_id);
           const item = sent.body.items.find((i) => i.product_id === outcome.product_id);
           setAwaiting(null);
-          setLocked(false);
+          setLockedRequest(null);
           setStockWarning({
             product_id: outcome.product_id,
             name: line?.product.name ?? "This item",
@@ -206,7 +266,7 @@ export function CheckoutForm() {
             available: outcome.available,
           });
           setMessage({ tone: "notice", text: MESSAGES.stock });
-          // The body changes, so the next Pay is a new attempt with a new key.
+          pendingFocus.current = "message";
           cart.setQuantity(outcome.product_id, outcome.available);
           settle();
           return;
@@ -215,14 +275,16 @@ export function CheckoutForm() {
         case "conflict":
           clearAttempt(storage());
           setAwaiting(null);
-          setLocked(false);
+          setLockedRequest(null);
           setMessage({ tone: "danger", text: MESSAGES.conflict });
+          pendingFocus.current = "message";
           settle();
           return;
 
         case "invalid": {
+          markSettled(storage());
           setAwaiting(null);
-          setLocked(false);
+          setLockedRequest(null);
           const fieldErrors: FieldErrors = {};
           for (const path of Object.keys(outcome.fields)) {
             const [group, field] = path.split(".");
@@ -244,69 +306,92 @@ export function CheckoutForm() {
             // for developers, so the shopper gets plain words instead.
             const aboutTheBag = Object.keys(outcome.fields).length === 0;
             setMessage({ tone: "danger", text: aboutTheBag ? MESSAGES.unavailable : MESSAGES.checkDetails });
+            pendingFocus.current = "message";
             settle();
           }
           return;
         }
 
         case "retryable":
-          // The order may or may not exist. Keep the key and lock the details, so the
-          // next Pay is the same request.
-          setLocked(true);
+          // The order may or may not exist. Keep the key and lock the request, so the
+          // next Pay (even after a reload) re-sends exactly this one.
+          markUncertain(storage(), {});
+          lock(sent);
           setMessage({ tone: "danger", text: MESSAGES.retryable, detail: MESSAGES.locked });
+          pendingFocus.current = "message";
           settle();
           return;
       }
     },
-    [cart, router, settle, storage],
+    [cart, router, settle, storage, lock],
   );
 
-  const send = useCallback(
-    async (sent: SentRequest): Promise<Outcome> => {
-      inFlight.current = true;
-      setSubmitting(true);
-      lastSent.current = sent;
-      const outcome = await postCheckout(sent);
-      return outcome;
-    },
-    [],
-  );
+  const send = useCallback(async (sent: SentRequest): Promise<Outcome> => {
+    inFlight.current = true;
+    setSubmitting(true);
+    lastSent.current = sent;
+    return postCheckout(sent);
+  }, []);
 
   // --- awaiting: re-send the same request and key ---------------------------------
 
-  /** Re-sends the last request with its key. True once the outcome is known (and handled). */
-  const recheck = useCallback(async (): Promise<boolean> => {
+  /** Re-sends the locked request with its key and returns what the answer means. */
+  const resend = useCallback(async (): Promise<Outcome> => {
     const sent = lastSent.current;
-    if (sent === null || inFlight.current || !mounted.current) return false;
+    if (sent === null || inFlight.current) return { kind: "retryable" };
     setAwaiting((current) => current && { ...current, checking: true });
     const outcome = await send(sent);
-    if (!mounted.current) return true;
-    if (outcome.kind === "awaiting" || outcome.kind === "retryable") {
+    if (mounted.current && stillUnknown(outcome)) {
       // Still no answer from the provider: keep waiting, same request, same key.
+      if (outcome.kind === "awaiting") {
+        markUncertain(storage(), { token: outcome.token, reference: outcome.reference });
+      }
       settle();
       setAwaiting((current) => current && { ...current, checking: false });
-      return false;
     }
-    handleOutcome(outcome, sent);
-    return true;
-  }, [handleOutcome, send, settle]);
+    return outcome;
+  }, [send, settle, storage]);
 
   /** After 2 s, 4 s and 8 s, then "Check again now". */
   const startAwaiting = useCallback(async () => {
-    for (const delay of AWAITING_RECHECK_DELAYS_MS) {
-      await new Promise<void>((resolve) => {
-        window.clearTimeout(recheckTimer.current);
-        recheckTimer.current = window.setTimeout(resolve, delay);
-      });
-      if (!mounted.current) return;
-      if (await recheck()) return;
+    const run = ++recheckRun.current;
+    const active = () => mounted.current && run === recheckRun.current;
+    const result = await recheckUntilKnown({ send: resend, active });
+    if (!active() || lastSent.current === null) return;
+    if (result.status === "resolved") handleOutcome(result.outcome, lastSent.current);
+    else if (result.status === "exhausted") {
+      setAwaiting((current) => current && { ...current, exhausted: true });
     }
-    setAwaiting((current) => current && { ...current, exhausted: true });
-  }, [recheck]);
+  }, [resend, handleOutcome]);
 
   const checkAgainNow = useCallback(async () => {
-    await recheck();
-  }, [recheck]);
+    const outcome = await resend();
+    if (!stillUnknown(outcome) && lastSent.current !== null) handleOutcome(outcome, lastSent.current);
+  }, [resend, handleOutcome]);
+
+  // A reload (or a visit elsewhere and back) during an uncertain attempt: restore it,
+  // locked, from the tab's storage. A pending order resumes its re-checks; otherwise
+  // the shopper sees the retry message and Pay re-sends the stored request.
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+    const pending = uncertainAttempt<CheckoutRequest>(storage());
+    if (pending === null) return;
+    const restored = formFromBody(pending.body);
+    if (restored === null) {
+      clearAttempt(storage()); // not a request this page wrote
+      return;
+    }
+    const sent = { body: pending.body, key: pending.key };
+    setForm(restored);
+    lock(sent);
+    if (pending.token) {
+      setAwaiting({ token: pending.token, reference: pending.reference ?? "", exhausted: false, checking: false });
+      void startAwaiting();
+    } else {
+      setMessage({ tone: "danger", text: MESSAGES.retryable, detail: MESSAGES.locked });
+    }
+  }, [storage, lock, startAwaiting]);
 
   // --- Pay ------------------------------------------------------------------------
 
@@ -314,11 +399,19 @@ export function CheckoutForm() {
     if (inFlight.current || blocker !== null) return;
 
     const result = validateCheckout(form, card);
-    setChecked(true);
+    // While locked, contact and address can't be edited (they are the stored
+    // request's), so only the card fields can stop the re-send.
+    const problems: FieldErrors = {};
     if (!result.ok) {
-      setErrors(result.errors);
-      const first = firstField(result.errors);
-      if (first !== undefined) focusField(first);
+      for (const [field, error] of Object.entries(result.errors) as [CheckoutField, string][]) {
+        if (!locked || CARD_FIELDS.includes(field)) problems[field] = error;
+      }
+    }
+    setChecked(true);
+    const first = firstField(problems);
+    if (first !== undefined) {
+      setErrors(problems);
+      focusField(first);
       return;
     }
     setErrors({});
@@ -326,12 +419,18 @@ export function CheckoutForm() {
     setDeclined(false);
     setStockWarning(null);
 
-    const body = toCheckoutRequest(form, cart.lines);
-    const sent = { body, key: attemptKey(storage(), fingerprint(body)) };
+    let sent: SentRequest;
+    if (lockedRequest !== null) {
+      // An uncertain attempt: the same request, byte for byte, with the same key.
+      sent = lockedRequest;
+    } else {
+      const body = toCheckoutRequest(form, cart.lines);
+      sent = { body, key: attemptKey(storage(), fingerprint(body)) };
+    }
     const outcome = await send(sent);
     handleOutcome(outcome, sent);
     if (outcome.kind === "awaiting" && mounted.current) void startAwaiting();
-  }, [blocker, form, card, cart.lines, storage, send, handleOutcome, startAwaiting]);
+  }, [blocker, form, card, locked, lockedRequest, cart.lines, storage, send, handleOutcome, startAwaiting]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -405,7 +504,7 @@ export function CheckoutForm() {
     return <CheckoutShell>{null}</CheckoutShell>;
   }
 
-  if (cart.lines.length === 0) {
+  if (cart.lines.length === 0 && !locked) {
     return (
       <section className="shop-container flex flex-1 flex-col items-center justify-center py-24 text-center">
         <h1 className="headline text-title-2">Your bag is empty.</h1>
@@ -417,7 +516,12 @@ export function CheckoutForm() {
     );
   }
 
-  const total = cart.quote ? formatGBP(cart.quote.total) : null;
+  // The total on Pay is only shown when it is the total of what Pay will send.
+  const payItems = lockedRequest?.body.items ?? cart.lines;
+  const total =
+    cart.quote !== null && !cart.quoting && quoteDescribes(payItems, cart.quote)
+      ? formatGBP(cart.quote.total)
+      : null;
 
   return (
     <CheckoutShell>
@@ -592,9 +696,11 @@ export function CheckoutForm() {
               <div className="mt-10 space-y-4">
                 {declined ? (
                   <div
+                    ref={declinedRef}
+                    tabIndex={-1}
                     data-testid="declined-panel"
                     role="alert"
-                    className="rounded-[14px] border border-danger/20 bg-danger/[0.04] p-4"
+                    className="rounded-[14px] border border-danger/20 bg-danger/[0.04] p-4 outline-none"
                   >
                     <p className="text-callout font-medium text-danger">
                       Your card was declined. You haven&apos;t been charged.
@@ -612,10 +718,12 @@ export function CheckoutForm() {
 
                 {message !== null ? (
                   <div
+                    ref={messageRef}
+                    tabIndex={-1}
                     data-testid="checkout-message"
                     role="alert"
                     className={cn(
-                      "rounded-[14px] p-4 text-callout",
+                      "rounded-[14px] p-4 text-callout outline-none",
                       message.tone === "danger"
                         ? "border border-danger/20 bg-danger/[0.04] text-ink"
                         : "border border-low/25 bg-low/[0.07] text-ink",

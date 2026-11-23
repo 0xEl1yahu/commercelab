@@ -89,12 +89,17 @@ export type PayState = {
   quoteFailed: boolean;
   hasSoldOut: boolean;
   submitting: boolean;
+  /**
+   * An attempt with an unknown outcome is being retried: Pay re-sends that stored
+   * request as it is, so the current bag and quote don't apply.
+   */
+  locked?: boolean;
 };
 
 export type PayBlocker = "loading" | "empty" | "submitting" | "quote-failed" | "quoting" | "sold-out";
 
 /** True when the quote was made for exactly these lines (it may have cut quantities). */
-function quoteDescribes(lines: CartLine[], quote: CartQuote): boolean {
+export function quoteDescribes(lines: CartLine[], quote: CartQuote): boolean {
   if (quote.lines.length !== lines.length) return false;
   const requested = new Map(quote.lines.map((line) => [line.product.id, line.requested]));
   return lines.every((line) => requested.get(line.product_id) === line.quantity);
@@ -103,9 +108,11 @@ function quoteDescribes(lines: CartLine[], quote: CartQuote): boolean {
 /**
  * Why Pay can't be pressed right now, or null when it can. Pay is only offered for
  * a total the shopper has seen: the quote must be current and for these very lines.
+ * The exception is a locked retry of an uncertain attempt (see PayState.locked).
  */
 export function payBlocker(state: PayState): PayBlocker | null {
   if (!state.ready) return "loading";
+  if (state.locked) return state.submitting ? "submitting" : null;
   if (state.lines.length === 0) return "empty";
   if (state.submitting) return "submitting";
   if (state.quoteFailed) return "quote-failed";

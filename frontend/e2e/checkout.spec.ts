@@ -63,9 +63,26 @@ async function fillDetails(page: Page): Promise<void> {
   await page.getByLabel("Address line 1").fill(TEST_CUSTOMER.line1);
   await page.getByLabel("Town or city").fill(TEST_CUSTOMER.city);
   await page.getByLabel("Postcode").fill(TEST_CUSTOMER.postcode);
+  await fillCard(page);
+}
+
+async function fillCard(page: Page): Promise<void> {
   await page.getByLabel("Card number").fill(TEST_CUSTOMER.cardNumber);
   await page.getByLabel("Expiry date").fill(TEST_CUSTOMER.cardExpiry);
   await page.getByLabel("Security code").fill(TEST_CUSTOMER.cardSecurityCode);
+}
+
+const parsed = (body: string | null) => JSON.parse(body ?? "null") as unknown;
+
+// Copied from scripts/catalogue_data.py: a low-stock product the seed never orders (4 on hand).
+const LOW_STOCK_SKU = "KS-ARC-WHT";
+
+async function lowStockProduct(request: import("@playwright/test").APIRequestContext) {
+  const res = await request.get(apiUrl("/products"), { params: { limit: 100 } });
+  const { items } = (await res.json()) as { items: { id: number; sku: string; stock_left: number | null }[] };
+  const product = items.find((p) => p.sku === LOW_STOCK_SKU);
+  if (!product || product.stock_left == null) throw new Error(`no low-stock product ${LOW_STOCK_SKU}`);
+  return { id: product.id, left: product.stock_left };
 }
 
 /** Opens the checkout with the bag already quoted, so Pay shows a total and is enabled. */
@@ -228,6 +245,7 @@ test("network failure keeps the form and the key", async ({ page, request }) => 
   await expect(page.getByTestId("checkout-message")).toContainText(
     "Something went wrong. Your order wasn't placed twice — press Pay to try again.",
   );
+  await expect(page.getByTestId("checkout-message")).toBeFocused();
   // The form is kept, and locked while the outcome is uncertain.
   await expect(page.getByLabel("Email")).toHaveValue(TEST_CUSTOMER.email);
   await expect(page.getByLabel("Email")).toHaveAttribute("readonly", "");
@@ -243,8 +261,18 @@ test("network failure keeps the form and the key", async ({ page, request }) => 
   expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
 });
 
-test("reloading after an unanswered Pay reuses the stored key", async ({ page, request }) => {
-  await seedCart(page, [{ product_id: ids.spotlight.id, quantity: 1 }]);
+test("reload after a network failure restores the locked details and re-sends the same key", async ({
+  page,
+  request,
+}) => {
+  // The bag takes all but one of a low-stock product. The first order (which the
+  // browser never hears about) holds those units, so after the reload the re-quote
+  // cuts the bag to the 1 left. Re-building the request from that bag would be a new
+  // body, a new key and a second order; re-sending the stored one is the same order.
+  const low = await lowStockProduct(request);
+  const quantity = low.left - 1;
+  expect(quantity).toBeGreaterThan(1);
+  await seedCart(page, [{ product_id: low.id, quantity }]);
   const sent = recordCheckoutRequests(page);
   const before = rowCounts();
 
@@ -265,14 +293,70 @@ test("reloading after an unanswered Pay reuses the stored key", async ({ page, r
   await expect(page.getByTestId("checkout-message")).toContainText("Something went wrong.");
 
   await page.reload();
+  // The uncertain attempt is back: the details as they were sent, locked.
+  await expect(page.getByTestId("checkout-message")).toContainText(
+    "Something went wrong. Your order wasn't placed twice — press Pay to try again.",
+  );
+  await expect(page.getByLabel("Email")).toHaveValue(TEST_CUSTOMER.email);
+  await expect(page.getByLabel("Email")).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("Company (optional)")).toHaveValue(TEST_CUSTOMER.company);
+  await expect(page.getByLabel("Postcode")).toHaveValue(TEST_CUSTOMER.postcode);
+  await expect(page.getByLabel("Postcode")).toHaveAttribute("readonly", "");
+  // The re-quote has cut the bag, because the first order holds the stock.
+  await expect(page.getByTestId("summary-quantity")).toHaveText("1");
+
+  await fillCard(page); // card details are never stored
   await expect(payButton(page)).toBeEnabled();
-  await fillDetails(page);
   await payButton(page).click();
 
   const order = await landedOnOrder(page, request);
   expect(order.status).toBe("paid");
+  expect(order.items.map((item) => [item.product_id, item.quantity])).toEqual([[low.id, quantity]]);
   expect(sent).toHaveLength(2);
   expect(sent[1].key).toBe(sent[0].key);
+  expect(parsed(sent[1].body)).toEqual(parsed(sent[0].body));
+  expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
+});
+
+test("reload during an unconfirmed payment keeps checking the same key", async ({ page, request }) => {
+  await seedCart(page, [{ product_id: ids.spotlight.id, quantity: 1 }]);
+  const sent = recordCheckoutRequests(page);
+  const before = rowCounts();
+
+  // The backend really places (and charges) the order, but the page is told it's pending.
+  let calls = 0;
+  let reference = "";
+  await page.route("**/api/checkout", async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      const response = await route.fetch();
+      const order = (await response.json()) as Order;
+      reference = order.reference;
+      await route.fulfill({ response, json: { ...order, status: "pending", payment_status: "unknown" } });
+    } else {
+      await route.continue();
+    }
+  });
+
+  await openCheckout(page);
+  await fillDetails(page);
+  await payButton(page).click();
+  const awaiting = page.getByTestId("awaiting-panel");
+  await expect(awaiting).toContainText("We're confirming your payment.");
+
+  await page.reload();
+  // Still waiting on the same order, with no Pay button, and re-checking on its own.
+  await expect(awaiting).toContainText("We're confirming your payment.");
+  await expect(awaiting).toContainText(reference);
+  await expect(page.getByRole("heading", { name: "We're confirming your payment." })).toBeFocused();
+  await expect(payButton(page)).toHaveCount(0);
+
+  const order = await landedOnOrder(page, request);
+  expect(order.status).toBe("paid");
+  expect(order.reference).toBe(reference);
+  expect(sent).toHaveLength(2);
+  expect(sent[1].key).toBe(sent[0].key);
+  expect(parsed(sent[1].body)).toEqual(parsed(sent[0].body));
   expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
 });
 
@@ -293,6 +377,7 @@ test("a declined card can be tried again with a new key", async ({ page, request
 
   const declined = page.getByTestId("declined-panel");
   await expect(declined).toContainText("Your card was declined. You haven't been charged.");
+  await expect(declined).toBeFocused();
   // The bag and details are kept.
   await expect(page.getByLabel("Email")).toHaveValue(TEST_CUSTOMER.email);
   await expect(page.getByLabel("Email")).not.toHaveAttribute("readonly", "");
@@ -330,6 +415,7 @@ test("an unconfirmed payment waits, then re-sends the same request and key", asy
 }) => {
   await seedCart(page, [{ product_id: ids.spotlight.id, quantity: 1 }]);
   const sent = recordCheckoutRequests(page);
+  const before = rowCounts();
 
   let calls = 0;
   await page.route("**/api/checkout", async (route) => {
@@ -344,6 +430,7 @@ test("an unconfirmed payment waits, then re-sends the same request and key", asy
 
   const awaiting = page.getByTestId("awaiting-panel");
   await expect(awaiting).toContainText("We're confirming your payment.");
+  await expect(page.getByRole("heading", { name: "We're confirming your payment." })).toBeFocused();
   await expect(awaiting).toContainText("Don't pay again");
   await expect(awaiting).toContainText("CL-99999");
   await expect(awaiting.getByRole("link", { name: "View your order" })).toHaveAttribute(
@@ -352,12 +439,14 @@ test("an unconfirmed payment waits, then re-sends the same request and key", asy
   );
   await expect(payButton(page)).toHaveCount(0);
 
-  // The page re-sends on its own after 2 s.
+  // The page re-sends on its own after 2 s. The first answer was mocked, so the order
+  // is made by that re-send: exactly one.
   const order = await landedOnOrder(page, request);
   expect(order.status).toBe("paid");
   expect(sent).toHaveLength(2);
   expect(sent[1].key).toBe(sent[0].key);
   expect(sent[1].body).toBe(sent[0].body);
+  expect(rowCounts()).toEqual({ orders: before.orders + 1, payments: before.payments + 1 });
 });
 
 test("server validation errors show under the fields", async ({ page }) => {

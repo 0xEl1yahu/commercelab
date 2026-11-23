@@ -156,4 +156,17 @@ describe("payBlocker", () => {
   it("blocks while a line is sold out", () => {
     expect(payBlocker({ ...ok, hasSoldOut: true })).toBe("sold-out");
   });
+
+  it("while an uncertain attempt is locked, only an in-flight request blocks the re-send", () => {
+    // The re-send is the stored request, so today's bag and quote don't matter: the
+    // reload's re-quote may have cut the bag because the first order holds the stock.
+    const locked = { ...ok, locked: true };
+    expect(payBlocker({ ...locked, quoting: true })).toBeNull();
+    expect(payBlocker({ ...locked, quoteFailed: true })).toBeNull();
+    expect(payBlocker({ ...locked, hasSoldOut: true })).toBeNull();
+    expect(payBlocker({ ...locked, lines: [{ product_id: 7, quantity: 1 }, lines[1]] })).toBeNull();
+    expect(payBlocker({ ...locked, lines: [], quote: null })).toBeNull();
+    expect(payBlocker({ ...locked, submitting: true })).toBe("submitting");
+    expect(payBlocker({ ...locked, ready: false })).toBe("loading");
+  });
 });

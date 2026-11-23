@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
-
-/** After an unconfirmed payment, the same request and key are re-sent after 2 s, 4 s and 8 s. */
-export const AWAITING_RECHECK_DELAYS_MS = [2000, 4000, 8000] as const;
 
 type Props = {
   reference: string;
@@ -20,9 +18,17 @@ type Props = {
 /**
  * Shown in place of the form when the card provider hasn't answered (the order is
  * pending). There is no Pay button here on purpose: the page re-sends the same
- * request with the same key, which can't charge twice.
+ * request with the same key, which can't charge twice (see lib/checkout-recheck).
+ *
+ * The heading takes focus when the panel appears, so the change is announced and
+ * focus isn't left on <body> where the form used to be.
  */
 export function AwaitingPanel({ reference, token, exhausted, checking, onCheckAgain }: Props) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+
   return (
     <section
       data-testid="awaiting-panel"
@@ -33,7 +39,7 @@ export function AwaitingPanel({ reference, token, exhausted, checking, onCheckAg
         aria-hidden="true"
         className="block size-7 animate-spin rounded-full border-2 border-line border-t-accent"
       />
-      <h2 id="awaiting-heading" className="headline mt-6 text-title-3">
+      <h2 ref={headingRef} tabIndex={-1} id="awaiting-heading" className="headline mt-6 text-title-3 outline-none">
         We&apos;re confirming your payment.
       </h2>
       <p className="mt-3 max-w-[52ch] text-callout text-ink-2">

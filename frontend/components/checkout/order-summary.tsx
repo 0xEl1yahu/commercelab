@@ -119,7 +119,7 @@ export function OrderSummary({ quote, stale, notices, stockWarning, canRemove, o
                     Qty{" "}
                     {struck !== null && struck !== line.quantity ? (
                       <>
-                        <s className="text-muted/80">{struck}</s>{" "}
+                        <s className="text-muted">{struck}</s>{" "}
                       </>
                     ) : null}
                     <span data-testid="summary-quantity" className="text-ink-2 tabular-nums">
