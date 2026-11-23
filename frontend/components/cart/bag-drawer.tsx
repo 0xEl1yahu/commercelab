@@ -7,13 +7,13 @@
 // (`quoting`), failed (`quoteFailed`) or doesn't describe the lines on screen, the
 // numbers are shown as out of date and Check out waits.
 
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type JSX } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ProductImage } from "@/components/product/product-image";
 import { StockBadge } from "@/components/product/stock-badge";
 import { MAX_QUANTITY } from "@/lib/cart";
@@ -43,6 +43,7 @@ export function BagDrawer(): JSX.Element | null {
 
   // The drawer lives in the layout, so it outlasts navigation: close it when the
   // route changes (the back button, a link inside it).
+  const opener = useRef<HTMLElement | null>(null);
   const pathname = usePathname();
   const lastPath = useRef(pathname);
   useEffect(() => {
@@ -73,6 +74,19 @@ export function BagDrawer(): JSX.Element | null {
     <Sheet open={isOpen} onOpenChange={(next) => (next ? open() : close())}>
       <SheetContent
         side="right"
+        showCloseButton={false}
+        // Radix only returns focus to a <Trigger>; the drawer is opened by other
+        // buttons, so remember the one that had focus and give it back on close.
+        onOpenAutoFocus={() => {
+          const active = document.activeElement;
+          opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = opener.current;
+          opener.current = null;
+          if (target?.isConnected) target.focus();
+        }}
         className={cn(
           "gap-0 p-0 text-ink",
           "data-[side=right]:w-full data-[side=right]:sm:max-w-[380px]",
@@ -81,13 +95,23 @@ export function BagDrawer(): JSX.Element | null {
         )}
       >
         <header className="border-b border-line px-5 sm:px-6">
-          <div className="flex h-14 items-center">
+          <div className="flex h-14 items-center justify-between">
             <SheetTitle className="headline text-title-3">Your bag</SheetTitle>
+            {/* Our own close button: 44px to tap on a phone, 32px from sm up. */}
+            <SheetClose asChild>
+              <button
+                type="button"
+                className="-mr-3 inline-flex size-11 items-center justify-center rounded-pill text-ink outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent sm:-mr-2 sm:size-8"
+              >
+                <XIcon aria-hidden="true" className="size-4" />
+                <span className="sr-only">Close</span>
+              </button>
+            </SheetClose>
           </div>
           <SheetDescription className="sr-only">Everything in your bag, with the order total.</SheetDescription>
           {added ? (
-            <p role="status" className="-mt-1 flex items-start gap-1.5 pb-3 text-footnote text-ok">
-              <CheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" strokeWidth={2.5} />
+            <p role="status" className="-mt-1 flex items-start gap-1.5 pb-3 text-footnote text-ink-2">
+              <CheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-ok" strokeWidth={2.5} />
               <span>
                 Added {added.product.brand} {added.product.name}
               </span>
@@ -266,7 +290,7 @@ function BagLine({
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${product.name}`}
-            className="ml-auto rounded-pill px-1 py-1 text-footnote text-muted underline-offset-4 outline-none transition-colors hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+            className="ml-auto inline-flex min-h-11 items-center rounded-pill px-2 text-footnote sm:min-h-0 sm:px-1 sm:py-1 text-muted underline-offset-4 outline-none transition-colors hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-accent"
           >
             Remove
           </button>

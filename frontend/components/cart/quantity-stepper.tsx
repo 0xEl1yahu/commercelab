@@ -22,7 +22,7 @@ export function QuantityStepper({ value, min, max, onChange, label, size = "md",
   const button = cn(
     "inline-flex shrink-0 items-center justify-center rounded-pill text-ink outline-none transition-colors",
     "hover:bg-black/[0.06] focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-30",
-    small ? "size-8" : "size-11",
+    small ? "size-11 sm:size-8" : "size-11",
   );
 
   return (
@@ -31,7 +31,7 @@ export function QuantityStepper({ value, min, max, onChange, label, size = "md",
       aria-label={label ? `Quantity of ${label}` : "Quantity"}
       className={cn(
         "inline-flex items-center rounded-pill bg-surface",
-        small ? "h-8" : "h-11",
+        small ? "h-11 sm:h-8" : "h-11",
         className,
       )}
     >

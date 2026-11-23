@@ -24,7 +24,7 @@ async function productDetail(request: APIRequestContext, slug: string): Promise<
 }
 
 /** A product the seed holds at least 100 of, found by asking the quote for 100 of each. */
-async function plentifulProduct(request: APIRequestContext): Promise<number> {
+async function plentifulProduct(request: APIRequestContext): Promise<{ id: number; slug: string }> {
   const listing = await request.get(apiUrl("/products"), { params: { limit: 100 } });
   const { items } = (await listing.json()) as ProductPage;
   const res = await request.post(apiUrl("/cart/quote"), {
@@ -33,7 +33,7 @@ async function plentifulProduct(request: APIRequestContext): Promise<number> {
   const quote = (await res.json()) as CartQuote;
   const line = quote.lines.find((l) => l.quantity === 100);
   if (!line) throw new Error("no seeded product has 100 or more in stock");
-  return line.product.id;
+  return { id: line.product.id, slug: line.product.slug };
 }
 
 test.describe("product page", () => {
@@ -199,7 +199,67 @@ test.describe("bag drawer", () => {
     await expect(drawer(page)).toHaveCount(0);
   });
 
-  test("steppers and Remove change the bag; the totals follow the quote", async ({ page, request }) => {
+  test("focus returns to the button that opened the drawer", async ({ page, request }) => {
+    const { spotlight } = await catalogueIds(request);
+    await page.goto(`/p/${spotlight.slug}`);
+    const addToBag = page.getByRole("button", { name: "Add to bag" });
+    const bagButton = page.getByRole("button", { name: /^Bag/ });
+    const closers: [string, () => Promise<void>][] = [
+      ["Escape", () => page.keyboard.press("Escape")],
+      ["the close button", () => drawer(page).getByRole("button", { name: "Close" }).click()],
+      ["Continue shopping", () => drawer(page).getByRole("button", { name: "Continue shopping" }).click()],
+    ];
+
+    for (const [, close] of closers) {
+      await addToBag.click();
+      await expect(drawer(page)).toBeVisible();
+      await close();
+      await expect(drawer(page)).toHaveCount(0);
+      await expect(addToBag).toBeFocused();
+    }
+
+    await bagButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(drawer(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(drawer(page)).toHaveCount(0);
+    await expect(bagButton).toBeFocused();
+  });
+
+  test("the drawer's steppers are at least 44px to tap on a phone", async ({ page, request }) => {
+    const { spotlight } = await catalogueIds(request);
+    await seedCart(page, [{ product_id: spotlight.id, quantity: 2 }]);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Bag/ }).click();
+    const line = bagLines(page).first();
+    await expect(line).toBeVisible();
+    for (const control of [
+      line.getByRole("button", { name: /^Increase quantity/ }),
+      line.getByRole("button", { name: /^Decrease quantity/ }),
+      line.getByRole("button", { name: /^Remove/ }),
+      drawer(page).getByRole("button", { name: "Close" }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test("a line already at 100 opens the drawer without an Added line", async ({ page, request }) => {
+    const { id, slug } = await plentifulProduct(request);
+    await seedCart(page, [{ product_id: id, quantity: 100 }]);
+    await page.goto(`/p/${slug}`);
+    await expect(page.getByTestId("bag-count")).toHaveText("100");
+    await page.getByTestId("buy-box").getByRole("button", { name: "Add to bag" }).click();
+    await expect(drawer(page)).toBeVisible();
+    const line = bagLines(page).first();
+    await expect(line.getByTestId("quantity")).toHaveText("100");
+    await expect(drawer(page).getByText(/^Added /)).toHaveCount(0);
+    await expect(page.getByTestId("bag-count")).toHaveText("100");
+  });
+
+  test("steppers and Remove change the bag; the totals follow the quote",async ({ page, request }) => {
     const { spotlight } = await catalogueIds(request);
     await seedCart(page, [{ product_id: spotlight.id, quantity: 1 }]);
     await page.goto("/");
@@ -323,8 +383,8 @@ test.describe("a saved bag that cannot be trusted", () => {
   });
 
   test("oversized cart is capped", async ({ page, request }) => {
-    const productId = await plentifulProduct(request);
-    await seedCart(page, [{ product_id: productId, quantity: 9999 }]);
+    const { id } = await plentifulProduct(request);
+    await seedCart(page, [{ product_id: id, quantity: 9999 }]);
     await page.goto("/");
     await expect(page.getByTestId("bag-count")).toHaveText("100");
     await page.getByRole("button", { name: /^Bag/ }).click();

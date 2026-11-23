@@ -59,3 +59,11 @@ No `[frozen]` or `[coordinator]` file was changed. `components/ui/` is untouched
 - **Provider contract:** `add()` followed by `open()` re-quotes once. When `add()` changes nothing (a line already at 100, or a 51st line), `lastAdded` is not set and the drawer shows no "Added" line. This is as designed in `cart-provider.tsx`.
 - The drawer stays mounted in the layout, so it relies on its own `usePathname` effect to close on navigation.
 - `next/image` reports `src` as an absolute URL in the DOM; tests match `/media/<key>$` with a regex.
+
+## Review fixes (commit "fix(frontend): F3 review accessibility fixes")
+
+- The "Added …" words are `text-ink-2`; only the check icon is green.
+- Focus returns to the opener (Add to bag, or the header's Bag button) on Escape, the close button and Continue shopping. Radix only restores focus to a `<Trigger>`, so `onOpenAutoFocus` remembers `document.activeElement` and `onCloseAutoFocus` restores it. A mutation (removing the `focus()` call) fails the new test.
+- Touch targets: the drawer's stepper buttons, Remove and Close are 44px on a phone and 32px from `sm` up. The Close button is now the drawer's own (`showCloseButton={false}`), because the Sheet's built-in one is fixed at 32px and `components/ui/` is frozen.
+- New e2e tests pin focus restore, the 44px targets, and the `lastAdded` contract (a line already at 100 opens the drawer with no "Added" line).
+- Results: `npm test` 32 passed; typecheck passes; lint clean; `npm run e2e -- product-and-bag.spec.ts` 26 passed, 0 skipped.
